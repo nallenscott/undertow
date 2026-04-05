@@ -62,6 +62,25 @@ module Undertow
         with_redis { |r| r.scard(Registry::MODELS_KEY) > 0 } || false
       end
 
+      # Acquire the distributed drain lock using SET NX. Returns true if the lock
+      # was acquired, false if it was already held. TTL is a safety valve in case
+      # the job process dies before releasing it.
+      def acquire_drain_lock(ttl: 30)
+        lock_key = Undertow.configuration.drain_lock_key
+        return true unless lock_key
+
+        with_redis { |r| r.set(lock_key, '1', nx: true, ex: ttl) } || false
+      end
+
+      # Release the drain lock. Called at the start of DrainJob#perform so the
+      # scheduler can enqueue another job for IDs that arrive while this one runs.
+      def release_drain_lock
+        lock_key = Undertow.configuration.drain_lock_key
+        return unless lock_key
+
+        with_redis { |r| r.del(lock_key) }
+      end
+
       private
 
       def with_redis

@@ -15,9 +15,16 @@ module Undertow
     # ActiveJob queue to use for DrainJob.
     attr_accessor :queue_name
 
+    # Redis key used for the distributed drain lock. The scheduler acquires this
+    # lock (SET NX) before enqueueing DrainJob; the job releases it immediately
+    # on start so new work arriving mid-drain gets its own job on the next tick.
+    # Set to nil to disable lock management entirely.
+    attr_accessor :drain_lock_key
+
     def initialize
-      @max_batch  = 1_000
-      @queue_name = :undertow
+      @max_batch      = 1_000
+      @queue_name     = :undertow
+      @drain_lock_key = 'undertow:drain:lock'
     end
 
     def redis!

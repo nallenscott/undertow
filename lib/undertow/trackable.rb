@@ -39,53 +39,56 @@ module Undertow
       def _register_self_callbacks!
         after_commit  :_push_self_pending, on: %i[create update]
         after_destroy :_push_self_deleted
-
-        if method_defined?(:restore)
-          after_restore :_push_self_pending
-        end
+        after_restore :_push_self_pending if respond_to?(:after_restore)
       end
 
       def _register_dep_callbacks!(dep)
-        dep_class = dep[:association].to_s.classify.safe_constantize
+        dep_class = _resolve_dep_class(dep)
         return unless dep_class
 
-        root_class  = self
-        foreign_key = dep[:foreign_key]
-        resolver    = dep[:resolver]
-        watched     = dep[:watched_columns]
+        root_class = self
+        watched    = dep[:watched_columns].presence # [] treated same as nil — watch all
 
-        dep_class.after_commit(on: %i[create update]) do
-          next if watched && (saved_changes.keys & watched).empty?
-
-          ids = if foreign_key
-            root_class.where(foreign_key => id).pluck(:id)
-          else
-            resolver.call(self).pluck(:id)
-          end
-
-          root_class._push_undertow_pending(ids) if ids.any?
+        resolver = dep[:resolver] || begin
+          fk = dep[:foreign_key]
+          ->(record) { root_class.where(fk => record.id) }
         end
 
-        dep_class.after_destroy do
-          ids = if foreign_key
-            root_class.where(foreign_key => id).pluck(:id)
-          else
-            resolver.call(self).pluck(:id)
-          end
+        push_pending = ->(record) {
+          ids = resolver.call(record).pluck(:id)
+          next unless ids.any?
 
-          root_class._push_undertow_pending(ids) if ids.any?
+          root_class._push_undertow_pending(ids)
+        }
+
+        # Skip create/update callback when watched_columns is set and none changed.
+        # Note: saved_changes is empty when touched via belongs_to touch: true (bypasses
+        # dirty tracking) — that correctly falls through to skip here.
+        dep_class.after_commit on: %i[create update] do
+          next if watched && (saved_changes.keys & watched).none?
+
+          push_pending.call(self)
         end
 
-        if dep_class.method_defined?(:restore)
-          dep_class.after_restore do
-            ids = if foreign_key
-              root_class.where(foreign_key => id).pluck(:id)
-            else
-              resolver.call(self).pluck(:id)
-            end
+        # Dep destroyed — reindex surviving root records. SoftDeletable calls
+        # run_callbacks(:destroy), which fires after_destroy, but update_columns does NOT
+        # trigger after_commit, so scoping after_commit to [:create, :update] above
+        # ensures destroy commits don't double-fire.
+        dep_class.after_destroy { push_pending.call(self) }
 
-            root_class._push_undertow_pending(ids) if ids.any?
-          end
+        # Dep restored — after_restore is the only hook that fires because restore!
+        # uses update_columns, bypassing after_commit.
+        if dep_class.respond_to?(:after_restore)
+          dep_class.after_restore { push_pending.call(self) }
+        end
+      end
+
+      def _resolve_dep_class(dep)
+        if dep[:resolver]
+          dep[:association].to_s.classify.safe_constantize
+        else
+          reflect_on_association(dep[:association])&.klass ||
+            dep[:association].to_s.classify.safe_constantize
         end
       end
 
@@ -103,10 +106,8 @@ module Undertow
     private
 
     def _push_self_pending
-      changed = previous_changes.keys
       ignored = self.class._undertow_ignored_columns
-
-      return if changed.any? && (changed - ignored).empty?
+      return if ignored.any? && saved_changes.any? && (saved_changes.keys - ignored).empty?
 
       self.class._push_undertow_pending([id])
     end
