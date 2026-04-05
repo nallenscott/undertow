@@ -26,11 +26,6 @@ module Undertow
     private
 
     def drain_model(model_name)
-      unless Registry.key?(model_name)
-        Rails.logger.error("[Undertow::DrainJob] No config registered for #{model_name}") if defined?(Rails)
-        return
-      end
-
       max = Undertow.configuration.max_batch
 
       # Deregister before popping — any concurrent push will re-add the model,
@@ -45,6 +40,7 @@ module Undertow
       Buffer.reregister_model(model_name) if Buffer.remaining(model_name).positive?
 
       config = Registry[model_name]
+      raise "No Undertow config registered for #{model_name}" unless config
       config.on_drain.call(model_name, ids, deleted_ids)
     rescue StandardError => e
       Buffer.restore_pending(model_name, ids)         if ids&.any?
