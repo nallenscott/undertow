@@ -112,7 +112,7 @@ RSpec.describe Undertow::DrainJob do
     context 'when on_drain is nil' do
       before { config.on_drain = nil }
 
-      it 'restores IDs and re-registers the model in MODELS_KEY' do
+      it 'raises a descriptive error and restores IDs' do
         redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
         redis.sadd('undertow:pending:Widget', %w[5 6])
 

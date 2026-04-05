@@ -41,6 +41,8 @@ module Undertow
 
       config = Registry[model_name]
       raise "No Undertow config registered for #{model_name}" unless config
+      raise "#{model_name} is missing undertow_on_drain" unless config.on_drain
+
       config.on_drain.call(model_name, ids, deleted_ids)
     rescue StandardError => e
       Buffer.restore_pending(model_name, ids)         if ids&.any?
