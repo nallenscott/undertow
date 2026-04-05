@@ -35,5 +35,18 @@ module Undertow
     def tracking_disabled?
       Thread.current[:undertow_disabled]
     end
+
+    # Called from the host application's scheduler on each tick. Checks for
+    # pending work, acquires the drain lock, and enqueues DrainJob — no other
+    # wiring required:
+    #
+    #   every(1.second, 'undertow') { Undertow.tick }
+    #
+    def tick
+      return unless Buffer.pending?
+      return unless Buffer.acquire_drain_lock
+
+      DrainJob.perform_later
+    end
   end
 end

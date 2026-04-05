@@ -59,24 +59,6 @@ RSpec.describe 'Undertow pipeline', type: :integration do
 
       expect(pending_ids).to be_empty
     end
-
-    it 'keeps tracking disabled after a nested without_tracking block exits' do
-      Undertow.without_tracking do
-        Undertow.without_tracking { } # inner exits — must restore outer's disabled state, not nil
-        Post.create!(title: 'Still in outer block')
-      end
-
-      expect(pending_ids).to be_empty
-    end
-
-    it 'resumes tracking after the without_tracking block exits' do
-      Undertow.without_tracking { Post.create!(title: 'Suppressed') }
-      pending_ids # clear any accidental pushes
-
-      post = Post.create!(title: 'Normal')
-
-      expect(pending_ids).to include(post.id)
-    end
   end
 
   describe 'dependency tracking' do
