@@ -80,10 +80,14 @@ RSpec.describe 'Undertow pipeline', type: :integration do
   end
 
   describe 'dependency tracking' do
-    let!(:author) { Author.create!(name: 'Alice') }
-    let!(:post)   { Post.create!(title: 'Hello', author: author) }
+    let!(:category) { Category.create!(name: 'Tech') }
+    let!(:author)   { Author.create!(name: 'Alice') }
+    let!(:post)     { Post.create!(title: 'Hello', author: author) }
 
-    before { pending_ids } # drain all create pushes
+    before do
+      PostCategory.create!(post: post, category: category)
+      pending_ids # drain all create pushes
+    end
 
     it 'pushes Post ID when a watched Author column changes' do
       author.update!(name: 'Bob')
@@ -104,9 +108,31 @@ RSpec.describe 'Undertow pipeline', type: :integration do
     end
 
     it 'pushes Post ID via resolver dep when its watched column changes' do
-      author.update!(irrelevant: 'changed')
+      category.update!(name: 'Science')
 
       expect(pending_ids).to include(post.id)
+    end
+
+    it 'does not push via resolver dep when an unwatched column changes' do
+      category.update!(slug: 'science')
+
+      expect(pending_ids).to be_empty
+    end
+
+    it 'pushes Post ID via resolver dep when Category is destroyed' do
+      category.destroy!
+
+      expect(pending_ids).to include(post.id)
+    end
+
+    it 'pushes all Post IDs when a category with multiple posts changes' do
+      post2 = Post.create!(title: 'World', author: author)
+      PostCategory.create!(post: post2, category: category)
+      pending_ids # drain the create push for post2
+
+      category.update!(name: 'Science')
+
+      expect(pending_ids).to match_array([post.id, post2.id])
     end
   end
 

@@ -19,16 +19,25 @@ ActiveJob::Base.queue_adapter = :test
 ActiveRecord::Base.establish_connection(adapter: 'sqlite3', database: ':memory:')
 
 ActiveRecord::Schema.define do
+  create_table :categories, force: true do |t|
+    t.string :name
+    t.string :slug         # genuinely unwatched — used to verify no push
+  end
+
   create_table :authors, force: true do |t|
     t.string :name
-    t.string :irrelevant  # watched by resolver dep
-    t.string :bio         # genuinely unwatched — used to verify no push
+    t.string :bio          # genuinely unwatched — used to verify no push
   end
 
   create_table :posts, force: true do |t|
     t.string  :title
     t.integer :author_id
     t.string  :skipped       # undertow_skip covers this column
+  end
+
+  create_table :post_categories, force: true do |t|
+    t.integer :post_id
+    t.integer :category_id
   end
 end
 
@@ -40,10 +49,22 @@ ActiveRecord::Base.extend(Undertow::DSL)
 # ---------------------------------------------------------------------------
 # Test models
 # ---------------------------------------------------------------------------
+class Category < ActiveRecord::Base
+  has_many :post_categories
+  has_many :posts, through: :post_categories
+end
+
+class PostCategory < ActiveRecord::Base
+  belongs_to :post
+  belongs_to :category
+end
+
 class Author < ActiveRecord::Base; end
 
 class Post < ActiveRecord::Base
   belongs_to :author
+  has_many :post_categories
+  has_many :categories, through: :post_categories
 
   # Enables after_restore callback wiring in register_undertow_callbacks!
   define_model_callbacks :restore
@@ -65,11 +86,10 @@ class Post < ActiveRecord::Base
                       foreign_key:     :author_id,
                       watched_columns: %w[name]
 
-  # Resolver-based dep — :authors pluralised so _resolve_dep_class classifies it
-  # to Author via "authors".classify => "Author"
-  undertow_depends_on :authors,
-                      resolver:        ->(a) { Post.where(author_id: a.id) },
-                      watched_columns: %w[irrelevant]
+  # Resolver dep — Post has no FK on Category; resolved through join table.
+  undertow_depends_on :category,
+                      resolver:        ->(c) { c.posts },
+                      watched_columns: %w[name]
 end
 
 # ---------------------------------------------------------------------------
@@ -89,7 +109,9 @@ RSpec.configure do |config|
 
     Post::DRAINED.clear
 
+    ActiveRecord::Base.connection.execute('DELETE FROM post_categories')
     ActiveRecord::Base.connection.execute('DELETE FROM posts')
     ActiveRecord::Base.connection.execute('DELETE FROM authors')
+    ActiveRecord::Base.connection.execute('DELETE FROM categories')
   end
 end
