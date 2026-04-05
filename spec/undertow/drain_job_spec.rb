@@ -33,6 +33,15 @@ RSpec.describe Undertow::DrainJob do
       expect(drained).to be_empty
     end
 
+    it 'skips on_drain when model is in MODELS_KEY but both SETs are already empty' do
+      redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
+      # intentionally add no IDs to the pending or deleted SET
+
+      subject.perform
+
+      expect(drained).to be_empty
+    end
+
     it 'drains pending and deleted IDs then calls on_drain' do
       redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
       redis.sadd('undertow:pending:Widget', %w[1 2 3])

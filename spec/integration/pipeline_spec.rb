@@ -36,6 +36,15 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       expect(pending_ids).to be_empty
     end
 
+    it 'still pushes when both a skipped and a tracked column change together' do
+      post = Post.create!(title: 'Hello')
+      pending_ids # drain create push
+
+      post.update!(title: 'Changed', skipped: 'also changed')
+
+      expect(pending_ids).to include(post.id)
+    end
+
     it 'pushes the ID to deleted on destroy' do
       post = Post.create!(title: 'Hello')
       pending_ids # drain create push

@@ -31,6 +31,18 @@ RSpec.describe Undertow::Buffer do
       expect(redis.smembers('undertow:deleted:Post')).to match_array(%w[4 5])
       expect(redis.smembers(Undertow::Registry::MODELS_KEY)).to include('Post')
     end
+
+    it 'is a no-op when tracking is disabled' do
+      Undertow.without_tracking { described_class.push_deleted('Post', [1]) }
+
+      expect(redis.scard('undertow:deleted:Post')).to eq(0)
+    end
+
+    it 'does not raise when Redis raises a connection error' do
+      allow(redis).to receive(:sadd).and_raise(Redis::BaseConnectionError)
+
+      expect { described_class.push_deleted('Post', [1]) }.not_to raise_error
+    end
   end
 
   describe '.pop_pending' do
@@ -100,10 +112,22 @@ RSpec.describe Undertow::Buffer do
       expect(redis.smembers('undertow:pending:Post')).to match_array(%w[1 2])
     end
 
+    it 'is a no-op when the pending ids array is empty' do
+      described_class.restore_pending('Post', [])
+
+      expect(redis.scard('undertow:pending:Post')).to eq(0)
+    end
+
     it 'pushes IDs back into the deleted SET' do
       described_class.restore_deleted('Post', %w[3])
 
       expect(redis.smembers('undertow:deleted:Post')).to include('3')
+    end
+
+    it 'is a no-op when the deleted ids array is empty' do
+      described_class.restore_deleted('Post', [])
+
+      expect(redis.scard('undertow:deleted:Post')).to eq(0)
     end
   end
 
