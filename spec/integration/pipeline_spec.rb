@@ -107,6 +107,12 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       expect(pending_ids).to include(post.id)
     end
 
+    it 'pushes Post ID via FK dep when Author is restored' do
+      author.run_callbacks(:restore)
+
+      expect(pending_ids).to include(post.id)
+    end
+
     it 'pushes all Post IDs when a category with multiple posts changes' do
       post2 = Post.create!(title: 'World', author: author)
       PostCategory.create!(post: post2, category: category)

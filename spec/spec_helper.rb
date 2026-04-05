@@ -59,7 +59,9 @@ class PostCategory < ActiveRecord::Base
   belongs_to :category
 end
 
-class Author < ActiveRecord::Base; end
+class Author < ActiveRecord::Base
+  define_model_callbacks :restore
+end
 
 class Post < ActiveRecord::Base
   belongs_to :author
