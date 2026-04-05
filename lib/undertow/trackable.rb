@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
 module Undertow
-  # ActiveRecord concern included in any model that participates as a tracked
-  # root model. Provides class-level callback registration and the
-  # _enrichment_ignored_columns guard.
+  # ActiveRecord concern mixed in automatically when a model uses the Undertow DSL
+  # (undertow_on_drain, undertow_skip, undertow_depends_on). Never included manually.
   #
-  #   class Activity < ApplicationRecord
-  #     include Undertow::Trackable
-  #   end
-  #
+  # Provides class-level callback registration and the skip_columns guard.
   # Callbacks are wired at boot by the Railtie after all models are loaded.
   module Trackable
     extend ActiveSupport::Concern
@@ -28,7 +24,7 @@ module Undertow
 
         @_undertow_callbacks_registered = true
 
-        self._undertow_ignored_columns = (config[:skip_columns] || []).map(&:to_s)
+        self._undertow_ignored_columns = config.skip_columns
 
         _register_self_callbacks!
         (config.dependencies || []).each { |dep| _register_dep_callbacks!(dep) }

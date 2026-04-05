@@ -2,7 +2,13 @@
 
 module Undertow
   class Railtie < Rails::Railtie
-    # Wire after_commit callbacks onto every tracked model and its dependencies
+    # Extend ActiveRecord::Base with the Undertow DSL so any model can call
+    # undertow_on_drain, undertow_skip, and undertow_depends_on in its class body.
+    initializer 'undertow.extend_active_record' do
+      ActiveSupport.on_load(:active_record) { extend Undertow::DSL }
+    end
+
+    # Wire after_commit callbacks onto every registered model and its dependencies
     # after all models are loaded. Runs on each code reload in development.
     config.to_prepare do
       Registry.all.each do |model_name, config|

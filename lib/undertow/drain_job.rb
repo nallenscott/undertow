@@ -10,6 +10,8 @@ module Undertow
   #
   # Enqueue it on a scheduler tick when Buffer.pending? is true.
   class DrainJob < ActiveJob::Base
+    queue_as { Undertow.configuration.queue_name }
+
     def perform
       # Release the lock before draining so the scheduler can enqueue another job
       # for IDs that arrive while this one is running.
