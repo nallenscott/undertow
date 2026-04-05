@@ -65,13 +65,19 @@ RSpec.describe Undertow::DrainJob do
       expect(redis.scard('undertow:deleted:Widget')).to eq(0)
     end
 
-    it 'deregisters the model before popping (race safety)' do
+    it 'does not orphan IDs pushed concurrently between deregister and pop' do
       redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
       redis.sadd('undertow:pending:Widget', ['1'])
 
+      allow(Undertow::Buffer).to receive(:deregister_model).and_wrap_original do |original, name|
+        original.call(name)
+        redis.sadd('undertow:pending:Widget', ['99'])
+        redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
+      end
+
       subject.perform
 
-      expect(redis.smembers(Undertow::Registry::MODELS_KEY)).not_to include('Widget')
+      expect(drained.first[:ids]).to include('99')
     end
 
     it 're-registers the model when the batch is capped' do

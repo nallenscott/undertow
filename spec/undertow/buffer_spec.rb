@@ -49,6 +49,12 @@ RSpec.describe Undertow::Buffer do
 
       expect { described_class.push_deleted('Post', [1]) }.not_to raise_error
     end
+
+    it 'raises when redis is not configured' do
+      Undertow.configuration.redis = nil
+
+      expect { described_class.push_deleted('Post', [1]) }.to raise_error(RuntimeError, /redis is not set/)
+    end
   end
 
   describe '.pop_pending' do
