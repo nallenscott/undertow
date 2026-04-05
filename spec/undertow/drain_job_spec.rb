@@ -85,6 +85,17 @@ RSpec.describe Undertow::DrainJob do
       expect(redis.smembers(Undertow::Registry::MODELS_KEY)).to include('Widget')
     end
 
+    it 're-registers the model when the deleted SET batch is capped' do
+      Undertow.configuration.max_batch = 2
+      redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
+      redis.sadd('undertow:deleted:Widget', %w[1 2 3 4 5])
+
+      subject.perform
+
+      expect(redis.scard('undertow:deleted:Widget')).to eq(3)
+      expect(redis.smembers(Undertow::Registry::MODELS_KEY)).to include('Widget')
+    end
+
     context 'when no config is registered for the model' do
       it 'restores IDs and re-registers the model in MODELS_KEY' do
         Undertow::Registry.all.delete('Widget')

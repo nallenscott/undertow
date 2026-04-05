@@ -59,6 +59,15 @@ RSpec.describe 'Undertow pipeline', type: :integration do
 
       expect(pending_ids).to be_empty
     end
+
+    it 'resumes tracking after the without_tracking block exits' do
+      Undertow.without_tracking { Post.create!(title: 'Suppressed') }
+      pending_ids # clear any accidental pushes
+
+      post = Post.create!(title: 'Normal')
+
+      expect(pending_ids).to include(post.id)
+    end
   end
 
   describe 'dependency tracking' do
@@ -74,7 +83,7 @@ RSpec.describe 'Undertow pipeline', type: :integration do
     end
 
     it 'does not push when an unwatched Author column changes' do
-      author.update!(irrelevant: 'whatever')
+      author.update!(bio: 'nobody')
 
       expect(pending_ids).to be_empty
     end
@@ -83,6 +92,24 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       author.destroy!
 
       expect(pending_ids).to include(post.id)
+    end
+
+    it 'pushes Post ID via resolver dep when its watched column changes' do
+      author.update!(irrelevant: 'changed')
+
+      expect(pending_ids).to include(post.id)
+    end
+  end
+
+  describe 'restore tracking' do
+    it 'pushes to the pending SET on restore, not the deleted SET' do
+      post = Post.create!(title: 'Hello')
+      pending_ids # drain create push
+
+      post.run_callbacks(:restore)
+
+      expect(pending_ids).to include(post.id)
+      expect(deleted_ids).to be_empty
     end
   end
 

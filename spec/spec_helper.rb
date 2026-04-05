@@ -21,7 +21,8 @@ ActiveRecord::Base.establish_connection(adapter: 'sqlite3', database: ':memory:'
 ActiveRecord::Schema.define do
   create_table :authors, force: true do |t|
     t.string :name
-    t.string :irrelevant
+    t.string :irrelevant  # watched by resolver dep
+    t.string :bio         # genuinely unwatched — used to verify no push
   end
 
   create_table :posts, force: true do |t|
@@ -44,6 +45,9 @@ class Author < ActiveRecord::Base; end
 class Post < ActiveRecord::Base
   belongs_to :author
 
+  # Enables after_restore callback wiring in register_undertow_callbacks!
+  define_model_callbacks :restore
+
   # Captured drain calls — cleared in before(:each).
   DRAINED = []
 
@@ -60,6 +64,12 @@ class Post < ActiveRecord::Base
   undertow_depends_on :author,
                       foreign_key:     :author_id,
                       watched_columns: %w[name]
+
+  # Resolver-based dep — :authors pluralised so _resolve_dep_class classifies it
+  # to Author via "authors".classify => "Author"
+  undertow_depends_on :authors,
+                      resolver:        ->(a) { Post.where(author_id: a.id) },
+                      watched_columns: %w[irrelevant]
 end
 
 # ---------------------------------------------------------------------------
