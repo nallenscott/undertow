@@ -81,10 +81,10 @@ module Undertow
 
       def _resolve_dep_class(dep)
         if dep[:resolver]
-          dep[:association].to_s.classify.safe_constantize
+          dep[:association].to_s.classify.constantize
         else
           reflect_on_association(dep[:association])&.klass ||
-            dep[:association].to_s.classify.safe_constantize
+            dep[:association].to_s.classify.constantize
         end
       end
 
