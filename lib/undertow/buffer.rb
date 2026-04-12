@@ -90,8 +90,8 @@ module Undertow
         else
           yield client
         end
-      rescue Redis::BaseConnectionError => e
-        Rails.logger.error("Undertow: Redis unavailable: #{e.message}") if defined?(Rails)
+      rescue Redis::BaseConnectionError, Redis::CommandError => e
+        Rails.logger.error("Undertow: Redis error: #{e.message}") if defined?(Rails)
         nil
       end
     end

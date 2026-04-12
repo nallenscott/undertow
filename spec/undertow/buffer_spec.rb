@@ -23,6 +23,12 @@ RSpec.describe Undertow::Buffer do
       expect { described_class.push_pending('Post', [1]) }.not_to raise_error
     end
 
+    it 'does not raise when Redis raises a command error' do
+      allow(redis).to receive(:sadd).and_raise(Redis::CommandError)
+
+      expect { described_class.push_pending('Post', [1]) }.not_to raise_error
+    end
+
     it 'raises when redis is not configured' do
       Undertow.configuration.redis = nil
 
@@ -46,6 +52,12 @@ RSpec.describe Undertow::Buffer do
 
     it 'does not raise when Redis raises a connection error' do
       allow(redis).to receive(:sadd).and_raise(Redis::BaseConnectionError)
+
+      expect { described_class.push_deleted('Post', [1]) }.not_to raise_error
+    end
+
+    it 'does not raise when Redis raises a command error' do
+      allow(redis).to receive(:sadd).and_raise(Redis::CommandError)
 
       expect { described_class.push_deleted('Post', [1]) }.not_to raise_error
     end
