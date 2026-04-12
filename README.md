@@ -52,10 +52,12 @@ end
 
 ## DrainJob
 
-Subclass `Undertow::DrainJob` in your app so ActiveJob picks up your queue config:
+`Undertow::DrainJob` uses the `queue_name` from your configuration. Set it in the configure block:
 
 ```ruby
-class UndertowDrainJob < Undertow::DrainJob; end
+Undertow.configure do |c|
+  c.queue_name = :my_queue
+end
 ```
 
 The job releases the drain lock immediately on start so new work arriving mid-drain gets picked up on the next tick. If the batch is capped at `max_batch`, the model stays registered and drains again on the next tick. On any error, IDs are restored to Redis and the model is re-registered.
