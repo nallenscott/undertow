@@ -180,4 +180,16 @@ RSpec.describe Undertow::Buffer do
       expect(described_class.acquire_drain_lock).to be true
     end
   end
+
+  describe 'connection pool support' do
+    it 'checks out a connection via #with when the client responds to it' do
+      pool = double('pool')
+      allow(pool).to receive(:with).and_yield(redis)
+      Undertow.configuration.redis = pool
+
+      described_class.push_pending('Post', [1])
+
+      expect(redis.smembers('undertow:pending:Post')).to include('1')
+    end
+  end
 end

@@ -84,7 +84,12 @@ module Undertow
       private
 
       def with_redis
-        yield Undertow.configuration.redis!
+        client = Undertow.configuration.redis!
+        if client.respond_to?(:with)
+          client.with { |conn| yield conn }
+        else
+          yield client
+        end
       rescue Redis::BaseConnectionError => e
         Rails.logger.error("Undertow: Redis unavailable: #{e.message}") if defined?(Rails)
         nil
