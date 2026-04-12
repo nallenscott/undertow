@@ -4,11 +4,9 @@ module Undertow
   # Drains the per-model Redis buffers and delivers batches of dirty IDs to
   # each model's configured on_drain handler.
   #
-  # The host application subclasses this or uses it directly:
-  #
-  #   class UndertowDrainJob < Undertow::DrainJob; end
-  #
-  # Enqueue it on a scheduler tick when Buffer.pending? is true.
+  # Publishes two ActiveSupport::Notifications events:
+  #   drain.undertow  — after a successful on_drain call ({ model:, ids:, deleted_ids: })
+  #   error.undertow  — when on_drain raises ({ model:, exception: })
   class DrainJob < ActiveJob::Base
     queue_as { Undertow.configuration.queue_name }
 
@@ -44,10 +42,17 @@ module Undertow
       raise "#{model_name} is missing undertow_on_drain" unless config.on_drain
 
       config.on_drain.call(model_name, ids, deleted_ids)
+
+      ActiveSupport::Notifications.instrument('drain.undertow', {
+        model:       model_name,
+        ids:         ids,
+        deleted_ids: deleted_ids
+      })
     rescue StandardError => e
       Buffer.restore_pending(model_name, ids)         if ids&.any?
       Buffer.restore_deleted(model_name, deleted_ids) if deleted_ids&.any?
       Buffer.reregister_model(model_name)
+      ActiveSupport::Notifications.instrument('error.undertow', { model: model_name, exception: e })
       Rails.logger.error("[Undertow::DrainJob] #{model_name}: #{e.message}") if defined?(Rails)
     end
   end

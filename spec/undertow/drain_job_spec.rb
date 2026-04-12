@@ -150,6 +150,34 @@ RSpec.describe Undertow::DrainJob do
 
         expect(redis.smembers('undertow:deleted:Widget')).to include('99')
       end
+
+      it 'publishes error.undertow with the model name and exception' do
+        redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
+        redis.sadd('undertow:pending:Widget', %w[1])
+
+        payloads = []
+        ActiveSupport::Notifications.subscribed(->(*, payload) { payloads << payload }, 'error.undertow') do
+          subject.perform
+        end
+
+        expect(payloads.first[:model]).to eq('Widget')
+        expect(payloads.first[:exception]).to be_a(RuntimeError)
+      end
+    end
+
+    it 'publishes drain.undertow after a successful on_drain call' do
+      redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
+      redis.sadd('undertow:pending:Widget', %w[1 2])
+      redis.sadd('undertow:deleted:Widget', %w[3])
+
+      payloads = []
+      ActiveSupport::Notifications.subscribed(->(*, payload) { payloads << payload }, 'drain.undertow') do
+        subject.perform
+      end
+
+      expect(payloads.first[:model]).to eq('Widget')
+      expect(payloads.first[:ids]).to match_array(%w[1 2])
+      expect(payloads.first[:deleted_ids]).to match_array(%w[3])
     end
   end
 end
