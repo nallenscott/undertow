@@ -1,4 +1,4 @@
-# undertow
+# :ocean: undertow
 
 [![CI](https://github.com/nallenscott/undertow/actions/workflows/ci.yml/badge.svg)](https://github.com/nallenscott/undertow/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -50,7 +50,7 @@ every(1.second, 'undertow') { Undertow.tick }
 
 ## Root models
 
-The DSL is declared on the **root model**, the model that owns derived or aggregated state and needs to know when upstream data changes. The root model defines what it depends on, which columns matter, and what to do when affected IDs are ready.
+The DSL is declared on the root model, the model that owns derived or aggregated state and needs to know when upstream data changes. The root model defines what it depends on, which columns matter, and what to do when affected IDs are ready.
 
 Upstream models need no configuration. Undertow wires their callbacks automatically at boot when a root model declares a dependency on them.
 
@@ -58,7 +58,7 @@ Upstream models need no configuration. Undertow wires their callbacks automatica
 
 The following examples assume `Post` is the root model, with `Author` as a FK dependency and `Tag` as a resolver dependency through a `post_tags` join table.
 
-### `undertow_on_drain(callable)`
+#### `undertow_on_drain(callable)`
 
 Registers the handler invoked when a batch of IDs is ready. The callable receives:
 
@@ -72,7 +72,7 @@ undertow_on_drain ->(model_name, ids, deleted_ids) {
 }
 ```
 
-### `undertow_skip(columns)`
+#### `undertow_skip(columns)`
 
 An array of column names on the root model that should not trigger propagation when they change. Use this for columns that update frequently but don't affect downstream state.
 
@@ -80,15 +80,14 @@ An array of column names on the root model that should not trigger propagation w
 undertow_skip %w[view_count updated_at]
 ```
 
-### `undertow_depends_on(association, foreign_key:, watched_columns:)`
-### `undertow_depends_on(association, resolver:, watched_columns:)`
+#### `undertow_depends_on(association, foreign_key:, resolver:, watched_columns:)`
 
 Declares a dependency on an upstream model. Requires exactly one of:
 
 - `foreign_key:`, the column on the root model that holds the upstream ID. Undertow uses it to find affected root records directly.
 - `resolver:`, a lambda that receives the changed upstream record and returns the affected root records. Use this when there is no direct FK (e.g. a join table).
 
-`watched_columns:` is an optional array of column names on the **upstream** model. When provided, propagation only fires when one of those columns changes. Omit it to propagate on any change to the upstream model.
+`watched_columns:`, optional list of column names on the upstream model. When provided, propagation only fires when one of those columns changes. Omit it to propagate on any change to the upstream model.
 
 ```ruby
 # FK dependency: Post has an author_id column
