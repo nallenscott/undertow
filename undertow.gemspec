@@ -24,5 +24,5 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'activerecord',  '~> 7.0'
   spec.add_dependency 'activesupport', '~> 7.0'
   spec.add_dependency 'activejob',     '~> 7.0'
-  spec.add_dependency 'redis',         '~> 4.0'
+  spec.add_dependency 'redis',         '~> 5.0'
 end
