@@ -8,19 +8,26 @@ Rails apps often have models that represent a composition of data from multiple 
 
 The usual approach is to add callbacks to the upstream models and fan out from there. That works for simple cases, but it gets messy fast. It's easy to miss associations, it creates hidden coupling between models that have no business knowing about each other, and it breaks down entirely when the relationship is indirect, through a join table or a scope.
 
-Relational databases solve a version of this with materialized views: a precomputed result that tracks its own staleness and refreshes lazily when sources change. Undertow brings that pattern to ActiveRecord. Dependencies are declared on the root model, undertow resolves which records are affected when upstream data changes, and the affected IDs are buffered in Redis and delivered in batches to a handler you define, off the write path.
+Relational databases solve a version of this with materialized views: a precomputed result that tracks its own staleness and refreshes lazily when sources change. Undertow brings that pattern to ActiveRecord. Dependencies are declared on the root model, undertow resolves which records are affected when upstream data changes, and the affected IDs are buffered in a configurable store and delivered in batches to a handler you define, off the write path.
 
 ## Requirements
 
 - Ruby >= 3.0
 - Rails 7.0+
-- Redis 4.0+
 - ActiveJob
 
 ## Installation
 
+Add Undertow to your Gemfile:
+
 ```ruby
 gem 'undertow'
+```
+
+If you want to use `RedisStore` (Redis or Valkey), also add:
+
+```ruby
+gem 'redis'
 ```
 
 ## Setup
@@ -29,25 +36,41 @@ Create `config/initializers/undertow.rb`:
 
 ```ruby
 Undertow.configure do |c|
-  c.redis          = Redis.new(url: ENV['REDIS_URL'])
+  c.store          = Undertow::Store::MemoryStore.new
   c.queue_name     = :undertow
   c.max_batch      = 1_000
   c.drain_lock_key = 'undertow:drain:lock'
 end
 ```
 
+`MemoryStore` is the default, so setting `c.store` is optional unless you want a different backend.
+
+### Redis store
+
+```ruby
+Undertow.configure do |c|
+  c.store = Undertow::Store::RedisStore.new(Redis.new(url: ENV['REDIS_URL']))
+end
+```
+
+`RedisStore` is compatible with Redis and Valkey servers that support standard Redis set and lock commands.
+
 | Option | Default | Description |
 |---|---|---|
-| `redis` | none | A `Redis` client or connection pool. Required. |
+| `store` | `Undertow::Store::MemoryStore.new` | Store adapter implementation. |
 | `queue_name` | `:undertow` | ActiveJob queue for `DrainJob`. |
 | `max_batch` | `1_000` | Maximum IDs popped per model per drain. |
-| `drain_lock_key` | `'undertow:drain:lock'` | Redis key for the distributed drain lock. Set to `nil` to disable lock management. |
+| `drain_lock_key` | `'undertow:drain:lock'` | Lock key used by the configured store. Set to `nil` to disable lock management. |
 
 Call `Undertow.tick` from your scheduler on each interval:
 
 ```ruby
 every(1.second, 'undertow') { Undertow.tick }
 ```
+
+## Upgrading
+
+See [UPGRADING.md](UPGRADING.md) for version migration steps.
 
 ## Root models
 
@@ -118,7 +141,7 @@ Tracking state is thread-local and restored when the block exits, even if it rai
 
 `Undertow::DrainJob` is enqueued by `Undertow.tick` when pending work exists and the drain lock can be acquired. It runs on the queue set in your configuration.
 
-The job releases the drain lock immediately on start, so the scheduler can enqueue a new job for IDs arriving mid-drain without waiting. If a batch is capped at `max_batch`, the model stays registered and drains again on the next tick. On any error, IDs are restored to Redis and the model is re-registered.
+The job releases the drain lock immediately on start, so the scheduler can enqueue a new job for IDs arriving mid-drain without waiting. If a batch is capped at `max_batch`, the model stays registered and drains again on the next tick. On any error, IDs are restored to the store and the model is re-registered.
 
 The drain lock has a default TTL of 30 seconds as a safety valve in case the job process dies before releasing it.
 
