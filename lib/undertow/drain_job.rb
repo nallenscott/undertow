@@ -5,8 +5,8 @@ module Undertow
   # each model's configured on_drain handler.
   #
   # Publishes two ActiveSupport::Notifications events:
-  #   drain.undertow  — after a successful on_drain call ({ model:, ids:, deleted_ids: })
-  #   error.undertow  — when on_drain raises ({ model:, exception: })
+  #   drain.undertow , after a successful on_drain call ({ model:, ids:, deleted_ids: })
+  #   error.undertow , when on_drain raises ({ model:, exception: })
   class DrainJob < ActiveJob::Base
     queue_as { Undertow.configuration.queue_name }
 
@@ -26,7 +26,7 @@ module Undertow
     def drain_model(model_name)
       max = Undertow.configuration.max_batch
 
-      # Deregister before popping — any concurrent push will re-add the model,
+      # Deregister before popping, any concurrent push will re-add the model,
       # preventing the race where srem fires after a concurrent sadd.
       Buffer.deregister_model(model_name)
 
@@ -44,8 +44,8 @@ module Undertow
       config.on_drain.call(model_name, ids, deleted_ids)
 
       ActiveSupport::Notifications.instrument('drain.undertow', {
-        model:       model_name,
-        ids:         ids,
+        model: model_name,
+        ids: ids,
         deleted_ids: deleted_ids
       })
     rescue StandardError => e

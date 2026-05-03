@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 RSpec.describe Undertow::DrainJob do
-  let(:redis)   { Undertow.configuration.redis }
   let(:drained) { [] }
   let(:config) do
     c = Undertow::Registry::ModelConfig.new('Widget')
@@ -11,7 +10,7 @@ RSpec.describe Undertow::DrainJob do
 
   before do
     Undertow::Registry.all['Widget'] = config
-    redis.set(Undertow.configuration.drain_lock_key, '1', nx: true, ex: 30)
+    Undertow::Buffer.acquire_drain_lock
   end
 
   after do
@@ -24,7 +23,8 @@ RSpec.describe Undertow::DrainJob do
     it 'releases the drain lock immediately' do
       subject.perform
 
-      expect(redis.get(Undertow.configuration.drain_lock_key)).to be_nil
+      # lock should be free, a second acquire should succeed
+      expect(Undertow::Buffer.acquire_drain_lock).to be true
     end
 
     it 'returns early when no models are pending' do
@@ -34,8 +34,7 @@ RSpec.describe Undertow::DrainJob do
     end
 
     it 'skips on_drain when model is in MODELS_KEY but both SETs are already empty' do
-      redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
-      # intentionally add no IDs to the pending or deleted SET
+      Undertow::Buffer.reregister_model('Widget')
 
       subject.perform
 
@@ -43,9 +42,8 @@ RSpec.describe Undertow::DrainJob do
     end
 
     it 'drains pending and deleted IDs then calls on_drain' do
-      redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
-      redis.sadd('undertow:pending:Widget', %w[1 2 3])
-      redis.sadd('undertow:deleted:Widget', %w[4])
+      Undertow::Buffer.push_pending('Widget', %w[1 2 3])
+      Undertow::Buffer.push_deleted('Widget', %w[4])
 
       subject.perform
 
@@ -55,24 +53,21 @@ RSpec.describe Undertow::DrainJob do
     end
 
     it 'clears both SETs after draining' do
-      redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
-      redis.sadd('undertow:pending:Widget', %w[1 2])
-      redis.sadd('undertow:deleted:Widget', %w[3])
+      Undertow::Buffer.push_pending('Widget', %w[1 2])
+      Undertow::Buffer.push_deleted('Widget', %w[3])
 
       subject.perform
 
-      expect(redis.scard('undertow:pending:Widget')).to eq(0)
-      expect(redis.scard('undertow:deleted:Widget')).to eq(0)
+      expect(Undertow::Buffer.remaining('Widget')).to eq(0)
     end
 
-    it 'does not orphan IDs pushed concurrently between deregister and pop' do
-      redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
-      redis.sadd('undertow:pending:Widget', ['1'])
+    it 'avoids orphaning IDs pushed concurrently between deregister and pop' do
+      Undertow::Buffer.push_pending('Widget', ['1'])
 
       allow(Undertow::Buffer).to receive(:deregister_model).and_wrap_original do |original, name|
         original.call(name)
-        redis.sadd('undertow:pending:Widget', ['99'])
-        redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
+        Undertow::Buffer.push_pending('Widget', ['99'])
+        Undertow::Buffer.reregister_model('Widget')
       end
 
       subject.perform
@@ -82,36 +77,33 @@ RSpec.describe Undertow::DrainJob do
 
     it 're-registers the model when the batch is capped' do
       Undertow.configuration.max_batch = 2
-      redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
-      redis.sadd('undertow:pending:Widget', %w[1 2 3 4 5])
+      Undertow::Buffer.push_pending('Widget', %w[1 2 3 4 5])
 
       subject.perform
 
-      expect(redis.scard('undertow:pending:Widget')).to eq(3)
-      expect(redis.smembers(Undertow::Registry::MODELS_KEY)).to include('Widget')
+      expect(Undertow::Buffer.remaining('Widget')).to eq(3)
+      expect(Undertow::Buffer.pending_model_names).to include('Widget')
     end
 
     it 're-registers the model when the deleted SET batch is capped' do
       Undertow.configuration.max_batch = 2
-      redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
-      redis.sadd('undertow:deleted:Widget', %w[1 2 3 4 5])
+      Undertow::Buffer.push_deleted('Widget', %w[1 2 3 4 5])
 
       subject.perform
 
-      expect(redis.scard('undertow:deleted:Widget')).to eq(3)
-      expect(redis.smembers(Undertow::Registry::MODELS_KEY)).to include('Widget')
+      expect(Undertow::Buffer.remaining('Widget')).to eq(3)
+      expect(Undertow::Buffer.pending_model_names).to include('Widget')
     end
 
     context 'when no config is registered for the model' do
       it 'restores IDs and re-registers the model in MODELS_KEY' do
         Undertow::Registry.all.delete('Widget')
-        redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
-        redis.sadd('undertow:pending:Widget', %w[1 2])
+        Undertow::Buffer.push_pending('Widget', %w[1 2])
 
         subject.perform
 
-        expect(redis.smembers('undertow:pending:Widget')).to match_array(%w[1 2])
-        expect(redis.smembers(Undertow::Registry::MODELS_KEY)).to include('Widget')
+        expect(Undertow::Buffer.remaining('Widget')).to eq(2)
+        expect(Undertow::Buffer.pending_model_names).to include('Widget')
       end
     end
 
@@ -119,13 +111,12 @@ RSpec.describe Undertow::DrainJob do
       before { config.on_drain = nil }
 
       it 'raises a descriptive error and restores IDs' do
-        redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
-        redis.sadd('undertow:pending:Widget', %w[5 6])
+        Undertow::Buffer.push_pending('Widget', %w[5 6])
 
         subject.perform
 
-        expect(redis.smembers('undertow:pending:Widget')).to match_array(%w[5 6])
-        expect(redis.smembers(Undertow::Registry::MODELS_KEY)).to include('Widget')
+        expect(Undertow::Buffer.remaining('Widget')).to eq(2)
+        expect(Undertow::Buffer.pending_model_names).to include('Widget')
       end
     end
 
@@ -133,27 +124,24 @@ RSpec.describe Undertow::DrainJob do
       before { config.on_drain = ->(_m, _i, _d) { raise 'drain failure' } }
 
       it 'restores pending IDs and re-registers the model' do
-        redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
-        redis.sadd('undertow:pending:Widget', %w[10 20])
+        Undertow::Buffer.push_pending('Widget', %w[10 20])
 
         subject.perform
 
-        expect(redis.smembers('undertow:pending:Widget')).to match_array(%w[10 20])
-        expect(redis.smembers(Undertow::Registry::MODELS_KEY)).to include('Widget')
+        expect(Undertow::Buffer.remaining('Widget')).to eq(2)
+        expect(Undertow::Buffer.pending_model_names).to include('Widget')
       end
 
       it 'restores deleted IDs' do
-        redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
-        redis.sadd('undertow:deleted:Widget', %w[99])
+        Undertow::Buffer.push_deleted('Widget', %w[99])
 
         subject.perform
 
-        expect(redis.smembers('undertow:deleted:Widget')).to include('99')
+        expect(Undertow::Buffer.remaining('Widget')).to eq(1)
       end
 
       it 'publishes error.undertow with the model name and exception' do
-        redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
-        redis.sadd('undertow:pending:Widget', %w[1])
+        Undertow::Buffer.push_pending('Widget', %w[1])
 
         payloads = []
         ActiveSupport::Notifications.subscribed(->(*, payload) { payloads << payload }, 'error.undertow') do
@@ -166,9 +154,8 @@ RSpec.describe Undertow::DrainJob do
     end
 
     it 'publishes drain.undertow after a successful on_drain call' do
-      redis.sadd(Undertow::Registry::MODELS_KEY, 'Widget')
-      redis.sadd('undertow:pending:Widget', %w[1 2])
-      redis.sadd('undertow:deleted:Widget', %w[3])
+      Undertow::Buffer.push_pending('Widget', %w[1 2])
+      Undertow::Buffer.push_deleted('Widget', %w[3])
 
       payloads = []
       ActiveSupport::Notifications.subscribed(->(*, payload) { payloads << payload }, 'drain.undertow') do
