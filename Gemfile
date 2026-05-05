@@ -1,8 +1,10 @@
+# frozen_string_literal: true
+
 source 'https://rubygems.org'
 gemspec
 
 group :development, :test do
+  gem 'redis'
   gem 'rspec'
-  gem 'mock_redis'
   gem 'sqlite3'
 end

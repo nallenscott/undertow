@@ -3,7 +3,7 @@
 module Undertow
   # Class-level DSL extended onto ActiveRecord::Base by the Railtie. Any model
   # that calls these methods automatically registers itself with Undertow and
-  # gets Trackable behavior wired in at boot — no include needed.
+  # gets Trackable behavior wired in at boot, no include needed.
   #
   #   class Activity < ApplicationRecord
   #     undertow_on_drain ->(model_name, ids, deleted_ids) { ActivityReindexJob.perform_later(ids, deleted_ids) }
@@ -30,10 +30,10 @@ module Undertow
       raise ArgumentError, 'provide exactly one of foreign_key: or resolver:' unless foreign_key.nil? ^ resolver.nil?
 
       _undertow_config.dependencies << {
-        association:     association,
-        foreign_key:     foreign_key,
-        resolver:        resolver,
-        watched_columns: watched_columns
+         association: association,
+         foreign_key: foreign_key,
+         resolver: resolver,
+         watched_columns: watched_columns
       }.freeze
       _undertow_ensure_trackable!
     end

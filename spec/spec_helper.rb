@@ -2,9 +2,9 @@
 
 require 'active_record'
 require 'active_job'
-require 'redis'
-require 'mock_redis'
 require 'undertow'
+
+Dir[File.join(__dir__, 'support/**/*.rb')].sort.each { |f| require f }
 
 # ---------------------------------------------------------------------------
 # ActiveJob
@@ -14,19 +14,19 @@ ActiveJob::Base.queue_adapter = :test
 # ---------------------------------------------------------------------------
 # In-memory SQLite database
 # Two simple models: Author (dependency) and Post (root tracked model).
-# No timestamps — keeps saved_changes clean so skip_columns tests are precise.
+# No timestamps, keeps saved_changes clean so skip_columns tests are precise.
 # ---------------------------------------------------------------------------
 ActiveRecord::Base.establish_connection(adapter: 'sqlite3', database: ':memory:')
 
 ActiveRecord::Schema.define do
   create_table :categories, force: true do |t|
     t.string :name
-    t.string :slug         # genuinely unwatched — used to verify no push
+    t.string :slug         # genuinely unwatched, used to verify no push
   end
 
   create_table :authors, force: true do |t|
     t.string :name
-    t.string :bio          # genuinely unwatched — used to verify no push
+    t.string :bio          # genuinely unwatched, used to verify no push
   end
 
   create_table :posts, force: true do |t|
@@ -71,13 +71,13 @@ class Post < ActiveRecord::Base
   # Enables after_restore callback wiring in register_undertow_callbacks!
   define_model_callbacks :restore
 
-  # Captured drain calls — cleared in before(:each).
+  # Captured drain calls, cleared in before(:each).
   DRAINED = []
 
   undertow_on_drain ->(model_name, ids, deleted_ids) {
     Post::DRAINED << {
-      model_name:  model_name,
-      ids:         ids.map(&:to_i),
+      model_name: model_name,
+      ids: ids.map(&:to_i),
       deleted_ids: deleted_ids.map(&:to_i)
     }
   }
@@ -85,12 +85,12 @@ class Post < ActiveRecord::Base
   undertow_skip %w[skipped]
 
   undertow_depends_on :author,
-                      foreign_key:     :author_id,
+                      foreign_key: :author_id,
                       watched_columns: %w[name]
 
-  # Resolver dep — Post has no FK on Category; resolved through join table.
+  # Resolver dep, Post has no FK on Category; resolved through join table.
   undertow_depends_on :category,
-                      resolver:        ->(c) { c.posts },
+                      resolver: ->(c) { c.posts },
                       watched_columns: %w[name]
 end
 
@@ -102,12 +102,12 @@ Undertow::Registry.all.each do |model_name, config|
 end
 
 # ---------------------------------------------------------------------------
-# Per-test reset: fresh Redis, empty DB tables, empty drain capture.
+# Per-test reset: fresh MemoryStore, empty DB tables, empty drain capture.
 # ---------------------------------------------------------------------------
 RSpec.configure do |config|
   config.before(:each) do
     Undertow.instance_variable_set(:@configuration, nil)
-    Undertow.configure { |c| c.redis = MockRedis.new }
+    Undertow.configure { |c| c.store = Undertow::Store::MemoryStore.new }
 
     Post::DRAINED.clear
 

@@ -11,14 +11,14 @@ module Undertow
 
     included do
       # Columns listed here suppress self-tracking when they are the *only*
-      # things that changed — prevents feedback loops from columns updated by
+      # things that changed, prevents feedback loops from columns updated by
       # the drain handler itself.
       class_attribute :_undertow_ignored_columns, default: [], instance_writer: false
     end
 
     class_methods do
       # Called by the Railtie after all models/associations are loaded.
-      # Idempotent — safe to call multiple times (e.g. in reloading environments).
+      # Idempotent, safe to call multiple times (e.g. in reloading environments).
       def register_undertow_callbacks!(config)
         return if @_undertow_callbacks_registered
 
@@ -43,7 +43,7 @@ module Undertow
         return unless dep_class
 
         root_class = self
-        watched    = dep[:watched_columns].presence # [] treated same as nil — watch all
+        watched    = dep[:watched_columns].presence # [] treated same as nil, watch all
 
         resolver = dep[:resolver] || begin
           fk = dep[:foreign_key]
@@ -59,20 +59,20 @@ module Undertow
 
         # Skip create/update callback when watched_columns is set and none changed.
         # Note: saved_changes is empty when touched via belongs_to touch: true (bypasses
-        # dirty tracking) — that correctly falls through to skip here.
+        # dirty tracking), that correctly falls through to skip here.
         dep_class.after_commit on: %i[create update] do
           next if watched && (saved_changes.keys & watched).none?
 
           push_pending.call(self)
         end
 
-        # Dep destroyed — reindex surviving root records. SoftDeletable calls
+        # Dep destroyed, reindex surviving root records. SoftDeletable calls
         # run_callbacks(:destroy), which fires after_destroy, but update_columns does NOT
         # trigger after_commit, so scoping after_commit to [:create, :update] above
         # ensures destroy commits don't double-fire.
         dep_class.after_destroy { push_pending.call(self) }
 
-        # Dep restored — after_restore is the only hook that fires because restore!
+        # Dep restored, after_restore is the only hook that fires because restore!
         # uses update_columns, bypassing after_commit.
         if dep_class.respond_to?(:after_restore)
           dep_class.after_restore { push_pending.call(self) }

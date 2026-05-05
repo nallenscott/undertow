@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 RSpec.describe 'Undertow pipeline', type: :integration do
-  let(:redis) { Undertow.configuration.redis }
-
   def pending_ids
     Undertow::Buffer.pop_pending('Post', 1_000).map(&:to_i)
   end
@@ -27,7 +25,7 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       expect(pending_ids).to include(post.id)
     end
 
-    it 'does not push when only skip_columns changed' do
+    it 'skips push when only skip_columns changed' do
       post = Post.create!(title: 'Hello')
       pending_ids # drain create push
 
@@ -54,7 +52,7 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       expect(deleted_ids).to include(post.id)
     end
 
-    it 'does not push when inside without_tracking' do
+    it 'skips push inside without_tracking' do
       Undertow.without_tracking { Post.create!(title: 'Suppressed') }
 
       expect(pending_ids).to be_empty
@@ -77,7 +75,7 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       expect(pending_ids).to include(post.id)
     end
 
-    it 'does not push when an unwatched Author column changes' do
+    it 'skips push when an unwatched Author column changes' do
       author.update!(bio: 'nobody')
 
       expect(pending_ids).to be_empty
@@ -95,7 +93,7 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       expect(pending_ids).to include(post.id)
     end
 
-    it 'does not push via resolver dep when an unwatched column changes' do
+    it 'skips resolver dep push when an unwatched column changes' do
       category.update!(slug: 'science')
 
       expect(pending_ids).to be_empty
@@ -137,7 +135,7 @@ RSpec.describe 'Undertow pipeline', type: :integration do
   end
 
   describe 'full drain' do
-    it 'calls on_drain with correct pending IDs and clears Redis' do
+    it 'calls on_drain with correct pending IDs and clears the buffer' do
       post1 = Post.create!(title: 'A')
       post2 = Post.create!(title: 'B')
 
@@ -163,7 +161,7 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       expect(result[:deleted_ids]).to include(post.id)
     end
 
-    it 'leaves remainder in Redis when capped at max_batch' do
+    it 'leaves remainder in buffer when capped at max_batch' do
       Undertow.configuration.max_batch = 2
       3.times { |i| Post.create!(title: "Post #{i}") }
 

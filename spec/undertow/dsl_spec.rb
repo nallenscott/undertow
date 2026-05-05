@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 RSpec.describe Undertow::DSL do
-  # Gadget reuses the posts table — no schema changes needed.
+  # Gadget reuses the posts table, no schema changes needed.
   before do
     Object.const_set(:Gadget, Class.new(ActiveRecord::Base) { self.table_name = 'posts' })
   end

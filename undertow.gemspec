@@ -13,7 +13,7 @@ Gem::Specification.new do |spec|
 
   spec.metadata = {
     'source_code_uri' => 'https://github.com/nallenscott/undertow',
-    'changelog_uri'   => 'https://github.com/nallenscott/undertow/blob/main/CHANGELOG.md',
+    'changelog_uri' => 'https://github.com/nallenscott/undertow/blob/main/CHANGELOG.md',
     'bug_tracker_uri' => 'https://github.com/nallenscott/undertow/issues'
   }
 
@@ -24,5 +24,4 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'activerecord',  '~> 7.0'
   spec.add_dependency 'activesupport', '~> 7.0'
   spec.add_dependency 'activejob',     '~> 7.0'
-  spec.add_dependency 'redis',         '~> 5.0'
 end

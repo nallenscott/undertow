@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
-require 'active_support'
 require 'active_record'
+require 'active_support'
 
 require_relative 'undertow/version'
 require_relative 'undertow/configuration'
+require_relative 'undertow/store/base'
+require_relative 'undertow/store/redis_store'
+require_relative 'undertow/store/memory_store'
 require_relative 'undertow/registry'
 require_relative 'undertow/buffer'
 require_relative 'undertow/dsl'
@@ -37,7 +40,7 @@ module Undertow
     end
 
     # Called from the host application's scheduler on each tick. Checks for
-    # pending work, acquires the drain lock, and enqueues DrainJob — no other
+    # pending work, acquires the drain lock, and enqueues DrainJob, no other
     # wiring required:
     #
     #   every(1.second, 'undertow') { Undertow.tick }

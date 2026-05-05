@@ -9,6 +9,22 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [memory, redis]
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s
+          --health-retries 20
+
+    env:
+      UNDERTOW_TEST_REDIS_URL: redis://127.0.0.1:6379/15
 
     steps:
       - uses: actions/checkout@v4
@@ -18,4 +34,10 @@ jobs:
           ruby-version: .ruby-version
           bundler-cache: true
 
-      - run: bundle exec rspec
+      - name: Run default suite (memory)
+        if: matrix.suite == 'memory'
+        run: bundle exec rspec --exclude-pattern "spec/undertow/store/*_store_spec.rb"
+
+      - name: Run Redis adapter contract specs
+        if: matrix.suite == 'redis'
+        run: RUN_REDIS_SPECS=1 bundle exec rspec spec/undertow/store/redis_store_spec.rb
