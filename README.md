@@ -10,24 +10,39 @@ The usual approach is to add callbacks to the upstream models and fan out from t
 
 Relational databases solve a version of this with materialized views: a precomputed result that tracks its own staleness and refreshes lazily when sources change. Undertow brings that pattern to ActiveRecord. Dependencies are declared on the root model, undertow resolves which records are affected when upstream data changes, and the affected IDs are buffered in a configurable store and delivered in batches to a handler you define, off the write path.
 
+## Mental model
+
+You don’t “update” derived state.
+
+You declare how to rebuild it.. and let Undertow pull it back into consistency.
+
+Like an undertow under the surface, it quietly keeps everything aligned.
+
 ## Requirements
 
 - Ruby >= 3.0
-- Rails 7.0+
-- ActiveJob
+- ActiveRecord ~> 7.0
+- ActiveSupport ~> 7.0
+- ActiveJob ~> 7.0
 
 ## Installation
 
 Add Undertow to your Gemfile:
 
 ```ruby
-gem 'undertow'
+gem "undertow"
 ```
 
-If you want to use `RedisStore` (Redis or Valkey), also add:
+If you want to use Redis or Valkey as the backing store, also add:
 
 ```ruby
-gem 'redis'
+gem "redis"
+```
+
+Then run:
+
+```bash
+bundle install
 ```
 
 ## Setup
@@ -39,56 +54,122 @@ Undertow.configure do |c|
   c.store          = Undertow::Store::MemoryStore.new
   c.queue_name     = :undertow
   c.max_batch      = 1_000
-  c.drain_lock_key = 'undertow:drain:lock'
+  c.drain_lock_key = "undertow:drain:lock"
 end
 ```
 
 `MemoryStore` is the default, so setting `c.store` is optional unless you want a different backend.
 
-### Redis store
+`MemoryStore` keeps state in process memory and is intended for tests and single process development. Use `RedisStore` for multi process or multi dyno deployments.
+
+For Redis or Valkey:
 
 ```ruby
 Undertow.configure do |c|
-  c.store = Undertow::Store::RedisStore.new(Redis.new(url: ENV['REDIS_URL']))
+  c.store = Undertow::Store::RedisStore.new(
+    Redis.new(url: ENV["REDIS_URL"])
+  )
 end
 ```
 
-`RedisStore` is compatible with Redis and Valkey servers that support standard Redis set and lock commands.
+`RedisStore` is compatible with Redis and Valkey servers that support standard Redis set and lock commands. It accepts a direct Redis client or a pooled client that responds to `with`.
 
 | Option | Default | Description |
 |---|---|---|
 | `store` | `Undertow::Store::MemoryStore.new` | Store adapter implementation. |
 | `queue_name` | `:undertow` | ActiveJob queue for `DrainJob`. |
 | `max_batch` | `1_000` | Maximum IDs popped per model per drain. |
-| `drain_lock_key` | `'undertow:drain:lock'` | Lock key used by the configured store. Set to `nil` to disable lock management. |
+| `drain_lock_key` | `"undertow:drain:lock"` | Lock key used by the configured store. Set to `nil` to disable lock management. |
 
 Call `Undertow.tick` from your scheduler on each interval:
 
 ```ruby
-every(1.second, 'undertow') { Undertow.tick }
+every(1.second, "undertow") { Undertow.tick }
 ```
-
-## Upgrading
-
-See [UPGRADING.md](UPGRADING.md) for version migration steps.
 
 ## Root models
 
-The DSL is declared on the root model, the model that owns derived or aggregated state and needs to know when upstream data changes. The root model defines what it depends on, which columns matter, and what to do when affected IDs are ready.
+Undertow starts from the root model, the model that owns derived or aggregated state and needs to know when upstream data changes.
+
+The root model defines:
+
+- what it depends on  
+- which columns matter  
+- what to do when affected IDs are ready  
 
 Upstream models need no configuration. Undertow wires their callbacks automatically at boot when a root model declares a dependency on them.
 
-## DSL
+That’s the point.
 
-The following examples assume `Post` is the root model, with `Author` as a FK dependency and `Tag` as a resolver dependency through a `post_tags` join table.
+The model that owns the derived state defines the contract.
 
-#### `undertow_on_drain(callable)`
+## Defining dependencies
 
-Registers the handler invoked when a batch of IDs is ready. The callable receives:
+Here’s the whole shape:
 
-- `model_name`, string name of the root model
-- `ids`, array of IDs that were updated
-- `deleted_ids`, array of IDs that were destroyed
+```ruby
+class Post < ApplicationRecord
+  belongs_to :author
+  has_many :post_tags
+  has_many :tags, through: :post_tags
+
+  undertow_skip %w[view_count updated_at]
+
+  undertow_depends_on :author,
+    foreign_key: :author_id,
+    watched_columns: %w[name bio]
+
+  undertow_depends_on :tag,
+    resolver: ->(tag) {
+      Post.joins(:post_tags).where(post_tags: { tag_id: tag.id })
+    },
+    watched_columns: %w[name slug]
+
+  undertow_on_drain ->(model_name, ids, deleted_ids) {
+    PostSyncJob.perform_later(ids, deleted_ids)
+  }
+end
+```
+
+Declare what affects the root model. Undertow figures out which root records are stale and delivers the IDs in batches.
+
+Use `foreign_key:` when the root model directly references the upstream model:
+
+```ruby
+undertow_depends_on :author,
+  foreign_key: :author_id,
+  watched_columns: %w[name bio]
+```
+
+Use `resolver:` when there is no direct foreign key from the root model to the upstream model:
+
+```ruby
+undertow_depends_on :tag,
+  resolver: ->(tag) {
+    Post.joins(:post_tags).where(post_tags: { tag_id: tag.id })
+  },
+  watched_columns: %w[name slug]
+```
+
+Use `watched_columns:` when only certain upstream changes matter:
+
+```ruby
+undertow_depends_on :author,
+  foreign_key: :author_id,
+  watched_columns: %w[name bio]
+```
+
+## Skipping noisy columns
+
+Use `undertow_skip` for columns on the root model that should not trigger downstream work.
+
+```ruby
+undertow_skip %w[view_count updated_at]
+```
+
+## Drain handler
+
+Use `undertow_on_drain` to define what happens when a batch is ready.
 
 ```ruby
 undertow_on_drain ->(model_name, ids, deleted_ids) {
@@ -96,61 +177,46 @@ undertow_on_drain ->(model_name, ids, deleted_ids) {
 }
 ```
 
-#### `undertow_skip(columns)`
-
-An array of column names on the root model that should not trigger propagation when they change. Use this for columns that update frequently but don't affect downstream state.
-
-```ruby
-undertow_skip %w[view_count updated_at]
-```
-
-#### `undertow_depends_on(association, foreign_key:, resolver:, watched_columns:)`
-
-Declares a dependency on an upstream model. Requires exactly one of:
-
-- `foreign_key:`, the column on the root model that holds the upstream ID. Undertow uses it to find affected root records directly.
-- `resolver:`, a lambda that receives the changed upstream record and returns the affected root records. Use this when there is no direct FK (e.g. a join table).
-
-`watched_columns:`, optional list of column names on the upstream model. When provided, propagation only fires when one of those columns changes. Omit it to propagate on any change to the upstream model.
-
-```ruby
-# FK dependency: Post has an author_id column
-undertow_depends_on :author,
-                    foreign_key:     :author_id,
-                    watched_columns: %w[name bio]
-
-# Resolver dependency: no FK on Post, association is through a join table
-undertow_depends_on :tag,
-                    resolver:        ->(tag) { Post.joins(:post_tags).where(post_tags: { tag_id: tag.id }) },
-                    watched_columns: %w[name slug]
-```
-
 ## Disabling tracking
-
-`Undertow.without_tracking` suppresses all buffer pushes inside the block. Useful in tests, seeds, and data migrations where dependency callbacks should not fire.
 
 ```ruby
 Undertow.without_tracking do
-  Author.find_each { |a| a.update!(legacy: true) }
+  Author.find_each { |author| author.update!(legacy: true) }
 end
 ```
 
-Tracking state is thread-local and restored when the block exits, even if it raises.
-
 ## DrainJob
 
-`Undertow::DrainJob` is enqueued by `Undertow.tick` when pending work exists and the drain lock can be acquired. It runs on the queue set in your configuration.
+`Undertow::DrainJob` is enqueued by `Undertow.tick` when pending work exists and the drain lock can be acquired.
 
-The job releases the drain lock immediately on start, so the scheduler can enqueue a new job for IDs arriving mid-drain without waiting. If a batch is capped at `max_batch`, the model stays registered and drains again on the next tick. On any error, IDs are restored to the store and the model is re-registered.
+- releases the lock immediately on start  
+- drains in batches (`max_batch`)  
+- restores IDs and emits an error event when the handler raises  
+- continues draining on next tick if capped or after an error  
 
-The drain lock has a default TTL of 30 seconds as a safety valve in case the job process dies before releasing it.
+The drain lock has a default TTL of 30 seconds.
 
 ## Instrumentation
 
 Undertow publishes `ActiveSupport::Notifications` events:
 
-- `drain.undertow`, fired after each successful drain. Payload: `model`, `ids`, `deleted_ids`
-- `error.undertow`, fired when a drain fails. Payload: `model`, `exception`
+```ruby
+ActiveSupport::Notifications.subscribe("drain.undertow") do |*args|
+  event = ActiveSupport::Notifications::Event.new(*args)
+  Rails.logger.info(event.payload)
+end
+```
+
+```ruby
+ActiveSupport::Notifications.subscribe("error.undertow") do |*args|
+  event = ActiveSupport::Notifications::Event.new(*args)
+  Rails.logger.error(event.payload)
+end
+```
+
+## Upgrading
+
+See [UPGRADING.md](UPGRADING.md) for version migration steps.
 
 ## License
 
