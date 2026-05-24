@@ -21,19 +21,27 @@ module Undertow
       _undertow_ensure_trackable!
     end
 
+    # Suppress self-tracking when these root-model columns are the only changes.
+    # Accepts strings or symbols; blanks are ignored.
     def undertow_skip(columns)
-      _undertow_config.skip_columns = columns
+      _undertow_config.skip_columns = Array(columns).map(&:to_s).reject(&:blank?).uniq
       _undertow_ensure_trackable!
     end
 
+    # Track invalidations from an upstream association.
+    # `watched_columns` accepts strings or symbols; blanks are ignored.
+    # Empty/nil means no watched-column filter.
     def undertow_depends_on(association, foreign_key: nil, resolver: nil, watched_columns: nil)
       raise ArgumentError, 'provide exactly one of foreign_key: or resolver:' unless foreign_key.nil? ^ resolver.nil?
+
+      normalized_watched = Array(watched_columns).map(&:to_s).
+        reject(&:blank?).uniq.presence
 
       _undertow_config.dependencies << {
          association: association,
          foreign_key: foreign_key,
          resolver: resolver,
-         watched_columns: watched_columns
+         watched_columns: normalized_watched
       }.freeze
       _undertow_ensure_trackable!
     end

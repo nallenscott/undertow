@@ -43,7 +43,7 @@ module Undertow
         return unless dep_class
 
         root_class = self
-        watched    = dep[:watched_columns].presence # [] treated same as nil, watch all
+        watched    = dep[:watched_columns]
 
         resolver = dep[:resolver] || begin
           fk = dep[:foreign_key]
