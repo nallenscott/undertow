@@ -57,6 +57,15 @@ RSpec.describe 'Undertow pipeline', type: :integration do
 
       expect(pending_ids).to be_empty
     end
+
+    it 'does not push on a no-op save' do
+      post = Post.create!(title: 'Hello')
+      pending_ids # drain create push
+
+      post.save!
+
+      expect(pending_ids).to be_empty
+    end
   end
 
   describe 'dependency tracking' do

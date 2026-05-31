@@ -33,9 +33,10 @@ module Undertow
       private
 
       def _register_self_callbacks!
-        after_commit  :_push_self_pending, on: %i[create update]
+        after_commit  :_push_self_created, on: :create
+        after_commit  :_push_self_updated, on: :update
         after_destroy :_push_self_deleted
-        after_restore :_push_self_pending if respond_to?(:after_restore)
+        after_restore :_push_self_restored if respond_to?(:after_restore)
       end
 
       def _register_dep_callbacks!(dep)
@@ -101,15 +102,34 @@ module Undertow
 
     private
 
-    def _push_self_pending
-      ignored = self.class._undertow_ignored_columns
-      return if ignored.any? && saved_changes.any? && (saved_changes.keys - ignored).empty?
+    def _push_self_created
+      _enqueue_self_pending
+    end
 
-      self.class._push_undertow_pending([id])
+    def _push_self_updated
+      return unless _self_update_requires_invalidation?
+
+      _enqueue_self_pending
+    end
+
+    def _push_self_restored
+      _enqueue_self_pending
     end
 
     def _push_self_deleted
       self.class._push_undertow_deleted([id])
+    end
+
+    def _enqueue_self_pending
+      self.class._push_undertow_pending([id])
+    end
+
+    def _self_update_requires_invalidation?
+      changed = saved_changes.keys
+      return false if changed.empty?
+
+      ignored = self.class._undertow_ignored_columns
+      (changed - ignored).any?
     end
   end
 end

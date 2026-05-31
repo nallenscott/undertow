@@ -32,36 +32,62 @@ RSpec.describe Undertow::Trackable do
     end
   end
 
-  describe '#_push_self_pending (skip_columns guard)' do
+  describe '#_push_self_created' do
     let!(:post) { Post.create!(title: 'test') }
 
     before { Undertow::Buffer.pop_pending('Post', 1_000) } # discard the create push
 
-    it 'fires when saved_changes is empty regardless of the ignore list' do
-      # after_destroy / update_columns leave saved_changes == {}, must always push
-      allow(post).to receive(:saved_changes).and_return({})
-
-      post.send(:_push_self_pending)
+    it 'pushes pending unconditionally' do
+      post.send(:_push_self_created)
 
       ids = Undertow::Buffer.pop_pending('Post', 10).map(&:to_i)
       expect(ids).to include(post.id)
     end
+  end
 
-    it 'suppresses push when every changed key is in skip_columns' do
-      allow(post).to receive(:saved_changes).and_return({ 'skipped' => [nil, 'x'] })
+  describe '#_push_self_updated' do
+    let!(:post) { Post.create!(title: 'test') }
 
-      post.send(:_push_self_pending)
+    before { Undertow::Buffer.pop_pending('Post', 1_000) } # discard the create push
 
-      ids = Undertow::Buffer.pop_pending('Post', 10)
-      expect(ids).to be_empty
+    it 'skips when saved changes is empty' do
+      allow(post).to receive(:saved_changes).and_return({})
+
+      post.send(:_push_self_updated)
+
+      expect(Undertow::Buffer.pop_pending('Post', 10)).to be_empty
     end
 
-    it 'fires when a non-ignored column is also present in saved_changes' do
+    it 'skips when every changed key is in skip_columns' do
+      allow(post).to receive(:saved_changes).and_return({ 'skipped' => [nil, 'x'] })
+      allow(post).to receive(:skip_columns).and_return(%i[skipped])
+
+      post.send(:_push_self_updated)
+
+      expect(Undertow::Buffer.pop_pending('Post', 10)).to be_empty
+    end
+
+    it 'pushes when a non-ignored column is present in saved_changes' do
       allow(post).to receive(:saved_changes).and_return(
         { 'skipped' => [nil, 'x'], 'title' => %w[Old New] }
       )
 
-      post.send(:_push_self_pending)
+      post.send(:_push_self_updated)
+
+      ids = Undertow::Buffer.pop_pending('Post', 10).map(&:to_i)
+      expect(ids).to include(post.id)
+    end
+  end
+
+  describe '#_push_self_restored' do
+    let!(:post) { Post.create!(title: 'test') }
+
+    before { Undertow::Buffer.pop_pending('Post', 1_000) } # discard the create push
+
+    it 'pushes pending unconditionally' do
+      allow(post).to receive(:saved_changes).and_return({})
+
+      post.send(:_push_self_restored)
 
       ids = Undertow::Buffer.pop_pending('Post', 10).map(&:to_i)
       expect(ids).to include(post.id)
