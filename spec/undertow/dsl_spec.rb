@@ -37,6 +37,29 @@ RSpec.describe Undertow::DSL do
 
       expect(Undertow::Registry['Gadget'].dependencies.first).to be_frozen
     end
+
+    it 'normalizes watched_columns to unique, non-blank strings' do
+      Gadget.undertow_depends_on(
+        :author,
+        foreign_key: :author_id,
+        watched_columns: ['', '  ', :name, 'name', :bio]
+      )
+
+      expect(Undertow::Registry['Gadget'].dependencies.first[:watched_columns]).to eq(%w[name bio])
+    end
+
+    it 'stores nil when no watched-column filter is configured' do
+      aggregate_failures do
+        Gadget.undertow_depends_on(:author, foreign_key: :author_id)
+        expect(Undertow::Registry['Gadget'].dependencies.first[:watched_columns]).to be_nil
+
+        Gadget.undertow_depends_on(:author, foreign_key: :author_id, watched_columns: [])
+        expect(Undertow::Registry['Gadget'].dependencies.first[:watched_columns]).to be_nil
+
+        Gadget.undertow_depends_on(:author, foreign_key: :author_id, watched_columns: [''])
+        expect(Undertow::Registry['Gadget'].dependencies.first[:watched_columns]).to be_nil
+      end
+    end
   end
 
   describe 'Trackable auto-inclusion' do
@@ -78,10 +101,10 @@ RSpec.describe Undertow::DSL do
   end
 
   describe '.undertow_skip' do
-    it 'sets skip_columns on the config' do
-      Gadget.undertow_skip %w[title skipped]
+    it 'normalizes skip_columns to unique, non-blank strings' do
+      Gadget.undertow_skip ['', '  ', :title, 'title', :description]
 
-      expect(Undertow::Registry['Gadget'].skip_columns).to eq(%w[title skipped])
+      expect(Undertow::Registry['Gadget'].skip_columns).to eq(%w[title description])
     end
   end
 end

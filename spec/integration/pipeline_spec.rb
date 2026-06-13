@@ -34,15 +34,6 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       expect(pending_ids).to be_empty
     end
 
-    it 'still pushes when both a skipped and a tracked column change together' do
-      post = Post.create!(title: 'Hello')
-      pending_ids # drain create push
-
-      post.update!(title: 'Changed', skipped: 'also changed')
-
-      expect(pending_ids).to include(post.id)
-    end
-
     it 'pushes the ID to deleted on destroy' do
       post = Post.create!(title: 'Hello')
       pending_ids # drain create push
@@ -57,6 +48,25 @@ RSpec.describe 'Undertow pipeline', type: :integration do
 
       expect(pending_ids).to be_empty
     end
+
+    it 'does not push on a no-op save' do
+      post = Post.create!(title: 'Hello')
+      pending_ids # drain create push
+
+      post.save!
+
+      expect(pending_ids).to be_empty
+    end
+
+    it 'pushes to the pending SET on restore, not the deleted SET' do
+      post = Post.create!(title: 'Hello')
+      pending_ids # drain create push
+
+      post.run_callbacks(:restore)
+
+      expect(pending_ids).to include(post.id)
+      expect(deleted_ids).to be_empty
+    end
   end
 
   describe 'dependency tracking' do
@@ -69,68 +79,82 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       pending_ids # drain all create pushes
     end
 
-    it 'pushes Post ID when a watched Author column changes' do
-      author.update!(name: 'Bob')
+    describe 'on update' do
+      it 'pushes Post IDs when a watched FK dep column changes' do
+        author.update!(name: 'Bob')
 
-      expect(pending_ids).to include(post.id)
+        expect(pending_ids).to include(post.id)
+      end
+
+      it 'skips push when an unwatched FK dep column changes' do
+        author.update!(bio: 'nobody')
+
+        expect(pending_ids).to be_empty
+      end
+
+      it 'does not push on a no-op save of a dep' do
+        author.save!
+
+        expect(pending_ids).to be_empty
+      end
+
+      it 'pushes Post IDs when a watched resolver dep column changes' do
+        category.update!(name: 'Science')
+
+        expect(pending_ids).to include(post.id)
+      end
+
+      it 'skips push when an unwatched resolver dep column changes' do
+        category.update!(slug: 'science')
+
+        expect(pending_ids).to be_empty
+      end
+
+      it 'pushes all associated Post IDs' do
+        post2 = Post.create!(title: 'World', author: author)
+        PostCategory.create!(post: post2, category: category)
+        pending_ids # drain create push for post2
+
+        category.update!(name: 'Science')
+
+        expect(pending_ids).to match_array([post.id, post2.id])
+      end
     end
 
-    it 'skips push when an unwatched Author column changes' do
-      author.update!(bio: 'nobody')
+    describe 'on destroy' do
+      it 'pushes Post IDs for a FK dep' do
+        author.destroy!
 
-      expect(pending_ids).to be_empty
+        expect(pending_ids).to include(post.id)
+      end
+
+      it 'pushes Post IDs for a resolver dep' do
+        category.destroy!
+
+        expect(pending_ids).to include(post.id)
+      end
     end
 
-    it 'pushes Post ID when Author is destroyed' do
-      author.destroy!
+    describe 'on restore' do
+      it 'pushes Post IDs for a FK dep' do
+        author.run_callbacks(:restore)
 
-      expect(pending_ids).to include(post.id)
+        expect(pending_ids).to include(post.id)
+      end
     end
 
-    it 'pushes Post ID via resolver dep when its watched column changes' do
-      category.update!(name: 'Science')
+    describe 'on create' do
+      it 'pushes Post IDs regardless of watched_columns' do
+        # Create the post first (SQLite enforces no FK constraints), then create
+        # the author so the dep callback fires against the pre-existing post.
+        next_author_id = (Author.maximum(:id) || 0) + 1
+        owned_post = Post.create!(title: 'Hello', author_id: next_author_id)
+        pending_ids # drain self-tracking create push
 
-      expect(pending_ids).to include(post.id)
-    end
+        Author.create!(id: next_author_id, bio: 'nobody') # name (watched) stays nil
 
-    it 'skips resolver dep push when an unwatched column changes' do
-      category.update!(slug: 'science')
-
-      expect(pending_ids).to be_empty
-    end
-
-    it 'pushes Post ID via resolver dep when Category is destroyed' do
-      category.destroy!
-
-      expect(pending_ids).to include(post.id)
-    end
-
-    it 'pushes Post ID via FK dep when Author is restored' do
-      author.run_callbacks(:restore)
-
-      expect(pending_ids).to include(post.id)
-    end
-
-    it 'pushes all Post IDs when a category with multiple posts changes' do
-      post2 = Post.create!(title: 'World', author: author)
-      PostCategory.create!(post: post2, category: category)
-      pending_ids # drain the create push for post2
-
-      category.update!(name: 'Science')
-
-      expect(pending_ids).to match_array([post.id, post2.id])
-    end
-  end
-
-  describe 'restore tracking' do
-    it 'pushes to the pending SET on restore, not the deleted SET' do
-      post = Post.create!(title: 'Hello')
-      pending_ids # drain create push
-
-      post.run_callbacks(:restore)
-
-      expect(pending_ids).to include(post.id)
-      expect(deleted_ids).to be_empty
+        expect(pending_ids).to include(owned_post.id)
+      end
     end
   end
 

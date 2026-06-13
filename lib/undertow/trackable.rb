@@ -4,8 +4,9 @@ module Undertow
   # ActiveRecord concern mixed in automatically when a model uses the Undertow DSL
   # (undertow_on_drain, undertow_skip, undertow_depends_on). Never included manually.
   #
-  # Provides class-level callback registration and the skip_columns guard.
-  # Callbacks are wired at boot by the Railtie after all models are loaded.
+  # Provides class-level callback registration and dependency push handlers, plus
+  # instance-level self-tracking handlers. Callbacks are wired at boot by the Railtie
+  # after all models are loaded.
   module Trackable
     extend ActiveSupport::Concern
 
@@ -30,66 +31,6 @@ module Undertow
         (config.dependencies || []).each { |dep| _register_dep_callbacks!(dep) }
       end
 
-      private
-
-      def _register_self_callbacks!
-        after_commit  :_push_self_pending, on: %i[create update]
-        after_destroy :_push_self_deleted
-        after_restore :_push_self_pending if respond_to?(:after_restore)
-      end
-
-      def _register_dep_callbacks!(dep)
-        dep_class = _resolve_dep_class(dep)
-        return unless dep_class
-
-        root_class = self
-        watched    = dep[:watched_columns].presence # [] treated same as nil, watch all
-
-        resolver = dep[:resolver] || begin
-          fk = dep[:foreign_key]
-          ->(record) { root_class.where(fk => record.id) }
-        end
-
-        push_pending = ->(record) {
-          ids = resolver.call(record).pluck(:id)
-          next unless ids.any?
-
-          root_class._push_undertow_pending(ids)
-        }
-
-        # Skip create/update callback when watched_columns is set and none changed.
-        # Note: saved_changes is empty when touched via belongs_to touch: true (bypasses
-        # dirty tracking), that correctly falls through to skip here.
-        dep_class.after_commit on: %i[create update] do
-          next if watched && (saved_changes.keys & watched).none?
-
-          push_pending.call(self)
-        end
-
-        # Dep destroyed, reindex surviving root records. SoftDeletable calls
-        # run_callbacks(:destroy), which fires after_destroy, but update_columns does NOT
-        # trigger after_commit, so scoping after_commit to [:create, :update] above
-        # ensures destroy commits don't double-fire.
-        dep_class.after_destroy { push_pending.call(self) }
-
-        # Dep restored, after_restore is the only hook that fires because restore!
-        # uses update_columns, bypassing after_commit.
-        if dep_class.respond_to?(:after_restore)
-          dep_class.after_restore { push_pending.call(self) }
-        end
-      end
-
-      def _resolve_dep_class(dep)
-        if dep[:resolver]
-          dep[:association].to_s.classify.constantize
-        else
-          reflect_on_association(dep[:association])&.klass ||
-            dep[:association].to_s.classify.constantize
-        end
-      end
-
-      public
-
       def _push_undertow_pending(ids)
         Buffer.push_pending(name, ids)
       end
@@ -97,19 +38,93 @@ module Undertow
       def _push_undertow_deleted(ids)
         Buffer.push_deleted(name, ids)
       end
+
+      def _push_dep_pending(record, dep)
+        ids = _dep_ids_for(record, dep)
+        _push_undertow_pending(ids) if ids.any?
+      end
+
+      def _push_dep_updated(record, dep)
+        watched = dep[:watched_columns]
+        # Two non-obvious cases where after_commit on :update fires:
+        #   - no-op save: saved_changes is {}, suppressed when watched_columns is configured
+        #   - touch (e.g. belongs_to touch: true): saved_changes contains only updated_at,
+        #     suppressed only when watched_columns is configured and updated_at is not in it
+        return if watched && (record.saved_changes.keys & watched).none?
+
+        _push_dep_pending(record, dep)
+      end
+
+      private
+
+      def _register_self_callbacks!
+        after_commit  :_push_self_created, on: :create
+        after_commit  :_push_self_updated, on: :update
+        after_destroy :_push_self_deleted
+        after_restore :_push_self_restored if respond_to?(:after_restore)
+      end
+
+      def _register_dep_callbacks!(dep)
+        dep_class = _resolve_dep_class(dep)
+        root_class = self
+
+        dep_class.after_commit(on: :create) { root_class._push_dep_pending(self, dep) }
+        dep_class.after_commit(on: :update) { root_class._push_dep_updated(self, dep) }
+
+        # Soft-delete gems fire run_callbacks(:destroy), triggering after_destroy, but
+        # mark the record deleted via update_columns (bypassing after_commit),
+        # so the create/update callbacks above never double-fire on a soft delete.
+        dep_class.after_destroy { root_class._push_dep_pending(self, dep) }
+
+        # Soft-delete restores use update_columns to unmark the record, bypassing
+        # after_commit. after_restore is the only hook that fires for restores.
+        dep_class.after_restore { root_class._push_dep_pending(self, dep) } if dep_class.respond_to?(:after_restore)
+      end
+
+      def _resolve_dep_class(dep)
+        reflect_on_association(dep[:association])&.klass ||
+          dep[:association].to_s.classify.constantize
+      end
+
+      def _dep_ids_for(record, dep)
+        if dep[:resolver]
+          dep[:resolver].call(record).pluck(:id)
+        else
+          where(dep[:foreign_key] => record.id).pluck(:id)
+        end
+      end
     end
 
     private
 
-    def _push_self_pending
-      ignored = self.class._undertow_ignored_columns
-      return if ignored.any? && saved_changes.any? && (saved_changes.keys - ignored).empty?
+    def _push_self_created
+      _enqueue_self_pending
+    end
 
-      self.class._push_undertow_pending([id])
+    def _push_self_updated
+      return unless _self_update_requires_invalidation?
+
+      _enqueue_self_pending
+    end
+
+    def _push_self_restored
+      _enqueue_self_pending
     end
 
     def _push_self_deleted
       self.class._push_undertow_deleted([id])
+    end
+
+    def _enqueue_self_pending
+      self.class._push_undertow_pending([id])
+    end
+
+    def _self_update_requires_invalidation?
+      changed = saved_changes.keys
+      return false if changed.empty?
+
+      ignored = self.class._undertow_ignored_columns
+      (changed - ignored).any?
     end
   end
 end
