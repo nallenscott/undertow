@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1](https://github.com/nallenscott/undertow/compare/v0.2.0...v0.2.1) (2026-06-13)
+
+
+### Bug Fixes
+
+* callback consistency ([9d87f1b](https://github.com/nallenscott/undertow/commit/9d87f1b25d63125b3342d4ccd93dba977551767b))
+* normalize column config and split self commit callbacks by action ([b298188](https://github.com/nallenscott/undertow/commit/b2981885124d5d3942ee2a1e188204452f3f613c))
+* normalize configured columns at the dsl boundary ([4730882](https://github.com/nallenscott/undertow/commit/4730882e34d3320f66802eb9d83021120b20a789))
+
 ## [0.2.0](https://github.com/nallenscott/undertow/compare/v0.1.0...v0.2.0) (2026-05-05)
 
 ### Features
