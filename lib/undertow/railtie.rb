@@ -3,7 +3,7 @@
 module Undertow
   class Railtie < Rails::Railtie
     # Extend ActiveRecord::Base with the Undertow DSL so any model can call
-    # undertow_on_drain, undertow_skip, and undertow_depends_on in its class body.
+    # undertow_sink, undertow_skip, and undertow_depends_on in its class body.
     initializer 'undertow.extend_active_record' do
       ActiveSupport.on_load(:active_record) { extend Undertow::DSL }
     end

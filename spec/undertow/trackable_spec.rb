@@ -5,7 +5,7 @@ RSpec.describe Undertow::Trackable do
     before do
       Object.const_set(:Gadget, Class.new(ActiveRecord::Base) { self.table_name = 'posts' })
       Gadget.extend(Undertow::DSL)
-      Gadget.undertow_on_drain ->(_m, _i, _d) {}
+      Gadget.undertow_sink(:noop) { |_m, _u, _d| }
     end
 
     after do

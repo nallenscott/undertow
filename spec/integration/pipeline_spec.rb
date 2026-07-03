@@ -159,7 +159,7 @@ RSpec.describe 'Undertow pipeline', type: :integration do
   end
 
   describe 'full drain' do
-    it 'calls on_drain with correct pending IDs and clears the buffer' do
+    it 'calls the sink with correct pending IDs and clears the buffer' do
       post1 = Post.create!(title: 'A')
       post2 = Post.create!(title: 'B')
 
@@ -173,7 +173,7 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       expect(Undertow::Buffer.pending?).to be false
     end
 
-    it 'includes deleted IDs in the on_drain call' do
+    it 'includes deleted IDs in the sink call' do
       post = Post.create!(title: 'Gone')
       pending_ids # drain create push
       post.destroy!

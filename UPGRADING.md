@@ -2,8 +2,35 @@
 
 ## Table of contents
 
+- [0.4.x to 0.5.x](#04x-to-05x)
 - [0.3.x to 0.4.x](#03x-to-04x)
 - [0.1.x to 0.2.x](#01x-to-02x)
+
+## 0.4.x to 0.5.x
+
+### 1) Replace `undertow_on_drain` with `undertow_sink`
+
+`undertow_on_drain` is removed. Models now declare one or more named sinks via `undertow_sink`, each receiving the same `(model_name, upserted_ids, deleted_ids)` on every drain.
+
+Before:
+
+```ruby
+undertow_on_drain ->(model_name, upserted_ids, deleted_ids) {
+  PostSyncJob.perform_later(upserted_ids, deleted_ids)
+}
+```
+
+After:
+
+```ruby
+undertow_sink(:post_sync) { |model_name, upserted_ids, deleted_ids|
+  PostSyncJob.perform_later(upserted_ids, deleted_ids)
+}
+```
+
+If you had a single `undertow_on_drain` handler, this is a mechanical rename, pick any sink name you like. If you need a second sink (e.g. a search index and a Kafka topic), add a second `undertow_sink` call; optionally set `max_batch_size:` on a sink whose downstream call has a tighter limit than the others.
+
+`drain.undertow`'s payload gains a `sink:` key, and now publishes once per sink (per chunk, if that sink's `max_batch_size` is smaller than the popped batch) rather than once per model. `error.undertow`'s payload also gains `sink:`, identifying which sink raised; the whole batch is still restored and retried on the next tick regardless of which sink failed.
 
 ## 0.3.x to 0.4.x
 

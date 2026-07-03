@@ -6,8 +6,8 @@ module Undertow
   # gets Trackable behavior wired in at boot, no include needed.
   #
   #   class Post < ApplicationRecord
-  #     undertow_on_drain ->(model_name, upserted_ids, deleted_ids) { PostSyncJob.perform_later(upserted_ids, deleted_ids) }
-  #     undertow_skip     %w[view_count updated_at]
+  #     undertow_sink(:search_index) { |model_name, upserted_ids, deleted_ids| PostSyncJob.perform_later(upserted_ids, deleted_ids) }
+  #     undertow_skip %w[view_count updated_at]
   #
   #     undertow_depends_on :author, foreign_key: :author_id, watched_columns: %w[name bio]
   #     undertow_depends_on :tag,
@@ -16,8 +16,21 @@ module Undertow
   #   end
   #
   module DSL
-    def undertow_on_drain(callable)
-      _undertow_config.on_drain = callable
+    # Registers a named sink. Call once per sink; every sink on a model receives
+    # the same (model_name, upserted_ids, deleted_ids) on each drain, so the
+    # block decides what to do with them, e.g. reindex a search index or publish
+    # to Kafka.
+    #
+    # `max_batch_size:` bounds how many IDs this sink's block receives per call.
+    # Defaults to `Undertow.configuration.max_batch`, the same size as the
+    # popped batch, meaning the block gets called once with everything. Set it
+    # lower when this sink's downstream call has a tighter limit than other
+    # sinks on the same model; DrainJob will call the block multiple times,
+    # chunked to this size, without affecting any other sink's batch size.
+    def undertow_sink(name, max_batch_size: nil, &handler)
+      raise ArgumentError, 'undertow_sink requires a block' unless handler
+
+      _undertow_config.sinks[name.to_sym] = { max_batch_size: max_batch_size, handler: handler }
       _undertow_ensure_trackable!
     end
 

@@ -125,7 +125,7 @@ class Post < ApplicationRecord
     },
     watched_columns: %w[name slug]
 
-  undertow_on_drain ->(model_name, upserted_ids, deleted_ids) {
+  undertow_sink(:post_sync) { |model_name, upserted_ids, deleted_ids|
     PostSyncJob.perform_later(upserted_ids, deleted_ids)
   }
 end
@@ -167,15 +167,31 @@ Use `undertow_skip` for columns on the root model that should not trigger downst
 undertow_skip %w[view_count updated_at]
 ```
 
-## Drain handler
+## Sinks
 
-Use `undertow_on_drain` to define what happens when a batch is ready.
+Use `undertow_sink` to define what happens when a batch is ready. Call it once per sink; every sink on a model receives the same `(model_name, upserted_ids, deleted_ids)` on each drain.
 
 ```ruby
-undertow_on_drain ->(model_name, upserted_ids, deleted_ids) {
+undertow_sink(:post_sync) { |model_name, upserted_ids, deleted_ids|
   PostSyncJob.perform_later(upserted_ids, deleted_ids)
 }
 ```
+
+A model can have more than one sink, e.g. one that reindexes a search index and another that publishes to Kafka:
+
+```ruby
+undertow_sink(:search_index) { |model_name, upserted_ids, deleted_ids|
+  PostReindexJob.perform_later(upserted_ids, deleted_ids)
+}
+
+undertow_sink(:kafka_topic, max_batch_size: 500) { |model_name, upserted_ids, deleted_ids|
+  PostKafkaPublishJob.perform_later(upserted_ids, deleted_ids)
+}
+```
+
+`max_batch_size:` bounds how many IDs a given sink's block receives per call, and defaults to `Undertow.configuration.max_batch` (the same size as the popped batch, so the block is called once with everything). Set it lower when one sink's downstream call has a tighter limit than others on the same model. DrainJob then calls that sink's block multiple times, chunked to the smaller size, without affecting how much any other sink receives.
+
+If any sink raises, the entire popped batch is restored and every sink retries on the next tick, including ones that already succeeded.
 
 ## Disabling tracking
 
@@ -201,7 +217,8 @@ Post.undertow_requeue([136543, 136544])             # explicit ids
 
 - releases the lock immediately on start  
 - drains in batches (`max_batch`)  
-- restores IDs and emits an error event when the handler raises  
+- calls every configured sink, chunked to that sink's own `max_batch_size` if it's smaller  
+- restores the whole batch and emits an error event when any sink raises  
 - continues draining on next tick if capped or after an error  
 
 The drain lock has a default TTL of 30 seconds.
@@ -217,7 +234,7 @@ ActiveSupport::Notifications.subscribe("drain.undertow") do |*args|
 end
 ```
 
-`drain.undertow`'s payload is `{ model:, upserted_ids:, deleted_ids:, duration_ms: }`, where `duration_ms` is how long the `undertow_on_drain` handler took to run.
+`drain.undertow`'s payload is `{ model:, sink:, upserted_ids:, deleted_ids:, duration_ms: }`, published once per sink (per chunk, if that sink's `max_batch_size` is smaller than the popped batch). `duration_ms` is how long that sink's block took to run for that call.
 
 ```ruby
 ActiveSupport::Notifications.subscribe("error.undertow") do |*args|
