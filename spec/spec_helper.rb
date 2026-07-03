@@ -74,10 +74,10 @@ class Post < ActiveRecord::Base
   # Captured drain calls, cleared in before(:each).
   DRAINED = []
 
-  undertow_on_drain ->(model_name, ids, deleted_ids) {
+  undertow_on_drain ->(model_name, upserted_ids, deleted_ids) {
     Post::DRAINED << {
       model_name: model_name,
-      ids: ids.map(&:to_i),
+      upserted_ids: upserted_ids.map(&:to_i),
       deleted_ids: deleted_ids.map(&:to_i)
     }
   }

@@ -125,8 +125,8 @@ class Post < ApplicationRecord
     },
     watched_columns: %w[name slug]
 
-  undertow_on_drain ->(model_name, ids, deleted_ids) {
-    PostSyncJob.perform_later(ids, deleted_ids)
+  undertow_on_drain ->(model_name, upserted_ids, deleted_ids) {
+    PostSyncJob.perform_later(upserted_ids, deleted_ids)
   }
 end
 ```
@@ -172,8 +172,8 @@ undertow_skip %w[view_count updated_at]
 Use `undertow_on_drain` to define what happens when a batch is ready.
 
 ```ruby
-undertow_on_drain ->(model_name, ids, deleted_ids) {
-  PostSyncJob.perform_later(ids, deleted_ids)
+undertow_on_drain ->(model_name, upserted_ids, deleted_ids) {
+  PostSyncJob.perform_later(upserted_ids, deleted_ids)
 }
 ```
 
@@ -216,6 +216,8 @@ ActiveSupport::Notifications.subscribe("drain.undertow") do |*args|
   Rails.logger.info(event.payload)
 end
 ```
+
+`drain.undertow`'s payload is `{ model:, upserted_ids:, deleted_ids:, duration_ms: }`, where `duration_ms` is how long the `undertow_on_drain` handler took to run.
 
 ```ruby
 ActiveSupport::Notifications.subscribe("error.undertow") do |*args|
