@@ -39,6 +39,23 @@ module Undertow
         Buffer.push_deleted(name, ids)
       end
 
+      # Enqueues records into the pending buffer without going through AR
+      # callbacks. Use this to replay a batch through the drain handler without
+      # triggering other model lifecycle callbacks, e.g. from a console or a
+      # data migration.
+      #
+      #   Post.undertow_requeue(Post.where(author_id: 123))
+      #   Post.undertow_requeue([136543, 136544])
+      #   Post.undertow_requeue  # all records
+      def undertow_requeue(scope_or_ids = :all)
+        ids = case scope_or_ids
+              when :all                   then pluck(:id)
+              when ActiveRecord::Relation then scope_or_ids.pluck(:id)
+              else                             Array(scope_or_ids)
+              end
+        _push_undertow_pending(ids)
+      end
+
       def _push_dep_pending(record, dep)
         ids = _dep_ids_for(record, dep)
         _push_undertow_pending(ids) if ids.any?

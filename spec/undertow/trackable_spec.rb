@@ -153,4 +153,40 @@ RSpec.describe Undertow::Trackable do
       end
     end
   end
+
+  describe '.undertow_requeue' do
+    let!(:author)   { Author.create!(name: 'Alice') }
+    let!(:post_one) { Post.create!(title: 'one', author: author) }
+    let!(:post_two) { Post.create!(title: 'two', author: author) }
+
+    before { Undertow::Buffer.pop_pending('Post', 1_000) }
+
+    it 'defaults to :all and pushes every record id' do
+      Post.undertow_requeue
+
+      ids = Undertow::Buffer.pop_pending('Post', 10).map(&:to_i)
+      expect(ids).to match_array([post_one.id, post_two.id])
+    end
+
+    it 'accepts an ActiveRecord::Relation and pushes its ids' do
+      Post.undertow_requeue(Post.where(id: post_one.id))
+
+      ids = Undertow::Buffer.pop_pending('Post', 10).map(&:to_i)
+      expect(ids).to match_array([post_one.id])
+    end
+
+    it 'accepts an array of ids and pushes them as-is' do
+      Post.undertow_requeue([post_two.id])
+
+      ids = Undertow::Buffer.pop_pending('Post', 10).map(&:to_i)
+      expect(ids).to match_array([post_two.id])
+    end
+
+    it 'accepts a single bare id' do
+      Post.undertow_requeue(post_one.id)
+
+      ids = Undertow::Buffer.pop_pending('Post', 10).map(&:to_i)
+      expect(ids).to match_array([post_one.id])
+    end
+  end
 end
