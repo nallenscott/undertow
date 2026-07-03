@@ -2,7 +2,32 @@
 
 ## Table of contents
 
+- [0.3.x to 0.4.x](#03x-to-04x)
 - [0.1.x to 0.2.x](#01x-to-02x)
+
+## 0.3.x to 0.4.x
+
+### 1) Rename `ids` to `upserted_ids`
+
+The `undertow_on_drain` handler's second positional argument, and the `drain.undertow` notification payload key, are renamed from `ids` to `upserted_ids` to read unambiguously alongside `deleted_ids`.
+
+Before:
+
+```ruby
+undertow_on_drain ->(model_name, ids, deleted_ids) {
+  PostSyncJob.perform_later(ids, deleted_ids)
+}
+```
+
+After:
+
+```ruby
+undertow_on_drain ->(model_name, upserted_ids, deleted_ids) {
+  PostSyncJob.perform_later(upserted_ids, deleted_ids)
+}
+```
+
+If you subscribe to `drain.undertow` directly, update `event.payload[:ids]` to `event.payload[:upserted_ids]`.
 
 ## 0.1.x to 0.2.x
 

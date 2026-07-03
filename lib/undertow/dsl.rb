@@ -6,7 +6,7 @@ module Undertow
   # gets Trackable behavior wired in at boot, no include needed.
   #
   #   class Post < ApplicationRecord
-  #     undertow_on_drain ->(model_name, ids, deleted_ids) { PostSyncJob.perform_later(ids, deleted_ids) }
+  #     undertow_on_drain ->(model_name, upserted_ids, deleted_ids) { PostSyncJob.perform_later(upserted_ids, deleted_ids) }
   #     undertow_skip     %w[view_count updated_at]
   #
   #     undertow_depends_on :author, foreign_key: :author_id, watched_columns: %w[name bio]

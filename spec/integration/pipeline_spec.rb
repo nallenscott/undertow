@@ -168,7 +168,7 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       expect(Post::DRAINED.length).to eq(1)
       result = Post::DRAINED.first
       expect(result[:model_name]).to eq('Post')
-      expect(result[:ids]).to match_array([post1.id, post2.id])
+      expect(result[:upserted_ids]).to match_array([post1.id, post2.id])
       expect(result[:deleted_ids]).to be_empty
       expect(Undertow::Buffer.pending?).to be false
     end
@@ -181,7 +181,7 @@ RSpec.describe 'Undertow pipeline', type: :integration do
       Undertow::DrainJob.new.perform
 
       result = Post::DRAINED.first
-      expect(result[:ids]).to be_empty
+      expect(result[:upserted_ids]).to be_empty
       expect(result[:deleted_ids]).to include(post.id)
     end
 

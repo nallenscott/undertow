@@ -4,7 +4,7 @@ RSpec.describe Undertow::DrainJob do
   let(:drained) { [] }
   let(:config) do
     c = Undertow::Registry::ModelConfig.new('Widget')
-    c.on_drain = ->(_model_name, ids, deleted_ids) { drained << { ids: ids, deleted_ids: deleted_ids } }
+    c.on_drain = ->(_model_name, upserted_ids, deleted_ids) { drained << { upserted_ids: upserted_ids, deleted_ids: deleted_ids } }
     c
   end
 
@@ -48,7 +48,7 @@ RSpec.describe Undertow::DrainJob do
       subject.perform
 
       expect(drained.length).to eq(1)
-      expect(drained.first[:ids]).to match_array(%w[1 2 3])
+      expect(drained.first[:upserted_ids]).to match_array(%w[1 2 3])
       expect(drained.first[:deleted_ids]).to match_array(%w[4])
     end
 
@@ -72,7 +72,7 @@ RSpec.describe Undertow::DrainJob do
 
       subject.perform
 
-      expect(drained.first[:ids]).to include('99')
+      expect(drained.first[:upserted_ids]).to include('99')
     end
 
     it 're-registers the model when the batch is capped' do
@@ -163,8 +163,35 @@ RSpec.describe Undertow::DrainJob do
       end
 
       expect(payloads.first[:model]).to eq('Widget')
-      expect(payloads.first[:ids]).to match_array(%w[1 2])
+      expect(payloads.first[:upserted_ids]).to match_array(%w[1 2])
       expect(payloads.first[:deleted_ids]).to match_array(%w[3])
+    end
+
+    it 'includes a non-negative duration_ms in the drain.undertow payload' do
+      Undertow::Buffer.push_pending('Widget', %w[1])
+
+      payloads = []
+      ActiveSupport::Notifications.subscribed(->(*, payload) { payloads << payload }, 'drain.undertow') do
+        subject.perform
+      end
+
+      expect(payloads.first[:duration_ms]).to be_a(Numeric)
+      expect(payloads.first[:duration_ms]).to be >= 0
+    end
+
+    it 'measures the actual on_drain runtime' do
+      config.on_drain = ->(_m, upserted_ids, deleted_ids) do
+        sleep 0.02
+        drained << { upserted_ids: upserted_ids, deleted_ids: deleted_ids }
+      end
+      Undertow::Buffer.push_pending('Widget', %w[1])
+
+      payloads = []
+      ActiveSupport::Notifications.subscribed(->(*, payload) { payloads << payload }, 'drain.undertow') do
+        subject.perform
+      end
+
+      expect(payloads.first[:duration_ms]).to be >= 15
     end
   end
 end
