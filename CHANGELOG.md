@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/nallenscott/undertow/compare/v0.3.0...v0.4.0) (2026-07-03)
+
+
+### Features
+
+* add duration_ms and rename ids to upserted_ids in drain.undertow payload ([#8](https://github.com/nallenscott/undertow/issues/8)) ([86623e8](https://github.com/nallenscott/undertow/commit/86623e80a9ada8f0864c3018dde318d2315a0ef0))
+
 ## [0.3.0](https://github.com/nallenscott/undertow/compare/v0.2.1...v0.3.0) (2026-07-03)
 
 
