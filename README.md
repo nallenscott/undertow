@@ -185,6 +185,16 @@ Undertow.without_tracking do
 end
 ```
 
+## Manually requeueing records
+
+Use `undertow_requeue` to push records into the pending buffer without going through AR callbacks, useful for replaying a batch from a console or a data migration.
+
+```ruby
+Post.undertow_requeue                               # all records
+Post.undertow_requeue(Post.where(author_id: 123))   # a relation
+Post.undertow_requeue([136543, 136544])             # explicit ids
+```
+
 ## DrainJob
 
 `Undertow::DrainJob` is enqueued by `Undertow.tick` when pending work exists and the drain lock can be acquired.
