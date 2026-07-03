@@ -5,13 +5,11 @@
 
 ### Features
 
-* add undertow_requeue for manual buffer enqueue ([8c71326](https://github.com/nallenscott/undertow/commit/8c713265edc50577fbe85b1994d85e42b442e0f2))
 * add undertow_requeue for manual buffer enqueue ([d577b47](https://github.com/nallenscott/undertow/commit/d577b47f9b5e0f7062b738ee069791b2f8e86022))
 
 
 ### Bug Fixes
 
-* pin sqlite3 to ~&gt; 1.4 for activerecord 7.0 compatibility ([c352950](https://github.com/nallenscott/undertow/commit/c352950b48193b9ce6e13b83bee98db40b9326b4))
 * pin sqlite3 to ~&gt; 1.4 for activerecord 7.0 compatibility ([7835de0](https://github.com/nallenscott/undertow/commit/7835de0f2e0cd5b7711d09e6964e643e8e1e3f15))
 
 ## [0.2.1](https://github.com/nallenscott/undertow/compare/v0.2.0...v0.2.1) (2026-06-13)
