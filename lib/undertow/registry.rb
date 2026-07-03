@@ -2,20 +2,20 @@
 
 module Undertow
   # Holds the declared dependency configuration for every tracked model.
-  # Populated at class load time via the DSL (undertow_on_drain, undertow_skip,
+  # Populated at class load time via the DSL (undertow_sink, undertow_skip,
   # undertow_depends_on); consumed by the Railtie and DrainJob.
   module Registry
     MODELS_KEY = 'undertow:pending:models'
 
     class ModelConfig
-      attr_reader   :model_name, :dependencies
-      attr_accessor :on_drain, :skip_columns
+      attr_reader   :model_name, :dependencies, :sinks
+      attr_accessor :skip_columns
 
       def initialize(model_name)
         @model_name   = model_name
         @dependencies = []
         @skip_columns = []
-        @on_drain     = nil
+        @sinks        = {}
       end
     end
 

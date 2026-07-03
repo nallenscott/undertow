@@ -2,7 +2,7 @@
 
 module Undertow
   # ActiveRecord concern mixed in automatically when a model uses the Undertow DSL
-  # (undertow_on_drain, undertow_skip, undertow_depends_on). Never included manually.
+  # (undertow_sink, undertow_skip, undertow_depends_on). Never included manually.
   #
   # Provides class-level callback registration and dependency push handlers, plus
   # instance-level self-tracking handlers. Callbacks are wired at boot by the Railtie

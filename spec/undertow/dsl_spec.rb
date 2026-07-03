@@ -63,8 +63,8 @@ RSpec.describe Undertow::DSL do
   end
 
   describe 'Trackable auto-inclusion' do
-    it 'includes Trackable when undertow_on_drain is called' do
-      Gadget.undertow_on_drain ->(_m, _i, _d) {}
+    it 'includes Trackable when undertow_sink is called' do
+      Gadget.undertow_sink(:search_index) { |_m, _u, _d| }
 
       expect(Gadget.ancestors).to include(Undertow::Trackable)
     end
@@ -82,7 +82,7 @@ RSpec.describe Undertow::DSL do
     end
 
     it 'includes Trackable only once regardless of how many macros are called' do
-      Gadget.undertow_on_drain ->(_m, _i, _d) {}
+      Gadget.undertow_sink(:search_index) { |_m, _u, _d| }
       Gadget.undertow_skip %w[title]
       Gadget.undertow_depends_on(:author, foreign_key: :author_id)
 
@@ -91,12 +91,42 @@ RSpec.describe Undertow::DSL do
     end
   end
 
-  describe '.undertow_on_drain' do
-    it 'sets on_drain on the config' do
-      handler = ->(_m, _i, _d) {}
-      Gadget.undertow_on_drain(handler)
+  describe '.undertow_sink' do
+    it 'raises ArgumentError when no block is given' do
+      expect {
+        Gadget.undertow_sink(:search_index)
+      }.to raise_error(ArgumentError, /requires a block/)
+    end
 
-      expect(Undertow::Registry['Gadget'].on_drain).to eq(handler)
+    it 'stores the handler and max_batch_size on the config' do
+      handler = ->(_m, _u, _d) {}
+      Gadget.undertow_sink(:search_index, max_batch_size: 500, &handler)
+
+      sink = Undertow::Registry['Gadget'].sinks[:search_index]
+      expect(sink[:handler]).to eq(handler)
+      expect(sink[:max_batch_size]).to eq(500)
+    end
+
+    it 'defaults max_batch_size to nil' do
+      Gadget.undertow_sink(:search_index) { |_m, _u, _d| }
+
+      expect(Undertow::Registry['Gadget'].sinks[:search_index][:max_batch_size]).to be_nil
+    end
+
+    it 'normalizes the sink name to a symbol' do
+      Gadget.undertow_sink('search_index') { |_m, _u, _d| }
+
+      expect(Undertow::Registry['Gadget'].sinks).to have_key(:search_index)
+    end
+
+    it 'overwrites a previously registered sink with the same name' do
+      first  = ->(_m, _u, _d) {}
+      second = ->(_m, _u, _d) {}
+      Gadget.undertow_sink(:search_index, &first)
+      Gadget.undertow_sink(:search_index, &second)
+
+      expect(Undertow::Registry['Gadget'].sinks.size).to eq(1)
+      expect(Undertow::Registry['Gadget'].sinks[:search_index][:handler]).to eq(second)
     end
   end
 

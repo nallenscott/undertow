@@ -17,11 +17,11 @@ RSpec.describe Undertow::Registry do
       expect(described_class.register(name)).to be(described_class.register(name))
     end
 
-    it 'initialises with empty dependencies and skip_columns and nil on_drain' do
+    it 'initialises with empty dependencies, skip_columns, and sinks' do
       config = described_class.register(name)
       expect(config.dependencies).to eq([])
       expect(config.skip_columns).to eq([])
-      expect(config.on_drain).to be_nil
+      expect(config.sinks).to eq({})
     end
   end
 
@@ -63,13 +63,17 @@ RSpec.describe Undertow::Registry do
       expect(config.dependencies).to include(dep)
     end
 
-    it 'allows on_drain and skip_columns to be set' do
-      callable = ->(_model_name, _ids, _deleted_ids) {}
-      config.on_drain = callable
+    it 'allows skip_columns to be set' do
       config.skip_columns = %w[lock_version]
 
-      expect(config.on_drain).to be(callable)
       expect(config.skip_columns).to eq(%w[lock_version])
+    end
+
+    it 'allows sinks to be populated' do
+      callable = ->(_model_name, _upserted_ids, _deleted_ids) {}
+      config.sinks[:search_index] = { max_batch_size: nil, handler: callable }
+
+      expect(config.sinks[:search_index][:handler]).to be(callable)
     end
   end
 end
