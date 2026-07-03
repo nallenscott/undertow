@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/nallenscott/undertow/compare/v0.4.0...v0.5.0) (2026-07-03)
+
+
+### Features
+
+* replace undertow_on_drain with multi-sink dispatch ([#10](https://github.com/nallenscott/undertow/issues/10)) ([02f1fcc](https://github.com/nallenscott/undertow/commit/02f1fccc5d0b0b730a0ef48a08cffd1e054bc1fe))
+
 ## [0.4.0](https://github.com/nallenscott/undertow/compare/v0.3.0...v0.4.0) (2026-07-03)
 
 
