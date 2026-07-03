@@ -5,14 +5,14 @@ module Undertow
   # that calls these methods automatically registers itself with Undertow and
   # gets Trackable behavior wired in at boot, no include needed.
   #
-  #   class Activity < ApplicationRecord
-  #     undertow_on_drain ->(model_name, ids, deleted_ids) { ActivityReindexJob.perform_later(ids, deleted_ids) }
-  #     undertow_skip     %w[lock_version searchkick_reindexing]
+  #   class Post < ApplicationRecord
+  #     undertow_on_drain ->(model_name, ids, deleted_ids) { PostSyncJob.perform_later(ids, deleted_ids) }
+  #     undertow_skip     %w[view_count updated_at]
   #
-  #     undertow_depends_on :provider, foreign_key: :provider_id, watched_columns: %w[approved mobile]
-  #     undertow_depends_on :location_series,
-  #                         resolver:        ->(ls) { Activity.where(series_id: ls.series_id) },
-  #                         watched_columns: %w[location_id hidden]
+  #     undertow_depends_on :author, foreign_key: :author_id, watched_columns: %w[name bio]
+  #     undertow_depends_on :tag,
+  #                         resolver:        ->(tag) { Post.joins(:post_tags).where(post_tags: { tag_id: tag.id }) },
+  #                         watched_columns: %w[name slug]
   #   end
   #
   module DSL
