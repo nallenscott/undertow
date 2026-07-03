@@ -1,6 +1,6 @@
 # :ocean: undertow
 
-[![Gem Version](https://badge.fury.io/rb/undertow.svg?ts=2026050701)](https://badge.fury.io/rb/undertow)
+[![Gem Version](https://img.shields.io/gem/v/undertow.svg)](https://rubygems.org/gems/undertow)
 [![CI](https://github.com/nallenscott/undertow/actions/workflows/ci.yml/badge.svg)](https://github.com/nallenscott/undertow/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
